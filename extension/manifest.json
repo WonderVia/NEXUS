@@ -1,0 +1,72 @@
+{
+  "manifest_version": 3,
+  "name": "WUElev8 Proctor Companion - Assessment Shield",
+  "version": "1.0.0",
+  "description": "Automatically monitors and logs prohibited external web activity (ChatGPT, Claude, Bing, Google Search) during active WUElev8 online assessments. All violations are reported to the proctoring backend.",
+  "permissions": [
+    "tabs",
+    "storage",
+    "webNavigation",
+    "notifications",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*.openai.com/*",
+    "*://chatgpt.com/*",
+    "*://*.claude.ai/*",
+    "*://*.anthropic.com/*",
+    "*://*.google.com/*",
+    "*://*.bing.com/*",
+    "*://perplexity.ai/*",
+    "*://*.perplexity.ai/*",
+    "*://copilot.microsoft.com/*",
+    "*://gemini.google.com/*",
+    "http://localhost:5000/*",
+    "http://127.0.0.1:5000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://chatgpt.com/*",
+        "*://*.openai.com/*",
+        "*://*.claude.ai/*",
+        "*://claude.ai/*",
+        "*://*.anthropic.com/*",
+        "*://*.google.com/search*",
+        "*://*.google.co.in/search*",
+        "*://*.bing.com/search*",
+        "*://perplexity.ai/*",
+        "*://*.perplexity.ai/*",
+        "*://gemini.google.com/*",
+        "*://copilot.microsoft.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "WUElev8 Assessment Shield",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:5173/*",
+      "http://127.0.0.1:5173/*",
+      "http://localhost:5000/*",
+      "http://127.0.0.1:5000/*"
+    ]
+  }
+}

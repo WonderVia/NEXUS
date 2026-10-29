@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WUElev8 Assessment Shield</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 320px;
+      min-height: 200px;
+      background: #0a0f1d;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1e3a5f, #1a2f4d);
+      padding: 14px 16px;
+      border-bottom: 1px solid #1e3a5f;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .header-title {
+      font-weight: 800;
+      font-size: 13px;
+      color: #f8fafc;
+      line-height: 1.2;
+    }
+
+    .header-sub {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 1px;
+    }
+
+    .status-section {
+      padding: 14px 16px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid;
+      margin-bottom: 12px;
+    }
+
+    .status-badge.active {
+      background: #052e16;
+      border-color: #16a34a;
+      color: #4ade80;
+    }
+
+    .status-badge.inactive {
+      background: #1e293b;
+      border-color: #334155;
+      color: #94a3b8;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-dot.active {
+      background: #22c55e;
+      box-shadow: 0 0 6px #22c55e;
+      animation: pulse 2s infinite;
+    }
+
+    .status-dot.inactive {
+      background: #475569;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-text {
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .status-sub {
+      font-size: 10px;
+      opacity: 0.7;
+      margin-top: 1px;
+    }
+
+    .monitored-list {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .monitored-list-title {
+      padding: 8px 12px;
+      background: #1e293b;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+    }
+
+    .monitored-item {
+      padding: 7px 12px;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    .monitored-item:last-child {
+      border-bottom: none;
+    }
+
+    .monitored-item .icon {
+      font-size: 13px;
+      width: 18px;
+      text-align: center;
+    }
+
+    .footer {
+      padding: 10px 16px;
+      border-top: 1px solid #1e293b;
+      text-align: center;
+      font-size: 10px;
+      color: #475569;
+    }
+
+    .attempt-id {
+      font-family: monospace;
+      font-size: 9px;
+      color: #334155;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon">🛡️</div>
+    <div>
+      <div class="header-title">Assessment Shield</div>
+      <div class="header-sub">WUElev8 Proctor Companion v1.0</div>
+    </div>
+  </div>
+
+  <div class="status-section">
+    <div id="status-badge" class="status-badge inactive">
+      <div id="status-dot" class="status-dot inactive"></div>
+      <div>
+        <div id="status-text" class="status-text">Not Monitoring</div>
+        <div id="status-sub" class="status-sub">No active assessment session detected</div>
+      </div>
+    </div>
+
+    <div class="monitored-list">
+      <div class="monitored-list-title">🔍 Monitored External Resources</div>
+      <div class="monitored-item"><span class="icon">🤖</span>ChatGPT (chatgpt.com)</div>
+      <div class="monitored-item"><span class="icon">✨</span>Claude (claude.ai)</div>
+      <div class="monitored-item"><span class="icon">💎</span>Google Gemini</div>
+      <div class="monitored-item"><span class="icon">🔵</span>Microsoft Copilot</div>
+      <div class="monitored-item"><span class="icon">🔍</span>Google Search</div>
+      <div class="monitored-item"><span class="icon">🔍</span>Bing Search</div>
+      <div class="monitored-item"><span class="icon">⚡</span>Perplexity AI</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    All activity is encrypted and reported to the assessment server.<br>
+    <div id="attempt-id" class="attempt-id"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

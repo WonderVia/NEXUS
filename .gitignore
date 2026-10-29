@@ -1,0 +1,17 @@
+node_modules/
+client/node_modules/
+server/node_modules/
+client/dist/
+server/dist/
+release/
+server/data/*.db
+server/data/*.db-wal
+server/data/*.db-shm
+*.log
+.env
+.DS_Store
+Thumbs.db
+scratch/
+el-test.txt
+process.exit(code
+{
