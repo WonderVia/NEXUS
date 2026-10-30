@@ -13,11 +13,13 @@
 const { URL } = require('url');
 
 const AI_DOMAINS = [
-  'chatgpt.com', 'openai.com',
+  'chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com',
+  'challenges.cloudflare.com', 'auth0.openai.com',
   'claude.ai', 'anthropic.com',
   'gemini.google.com', 'perplexity.ai',
   'copilot.microsoft.com', 'character.ai',
-  'poe.com', 'v0.dev'
+  'poe.com', 'v0.dev',
+  'gstatic.com', 'googleapis.com', 'googleusercontent.com'
 ];
 
 class NavigationPolicy {
@@ -107,7 +109,7 @@ class NavigationPolicy {
       return { allowed: false, reason: 'empty_url', message: 'No target URL provided' };
     }
 
-    if (targetUrl.startsWith('file:') || targetUrl.startsWith('devtools:') || targetUrl.startsWith('data:') || targetUrl.startsWith('blob:') || targetUrl.startsWith('chrome-extension:')) {
+    if (targetUrl === 'about:blank' || targetUrl.startsWith('file:') || targetUrl.startsWith('devtools:') || targetUrl.startsWith('data:') || targetUrl.startsWith('blob:') || targetUrl.startsWith('chrome-extension:')) {
       return { allowed: true, reason: 'internal_protocol' };
     }
 

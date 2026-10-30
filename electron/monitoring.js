@@ -220,9 +220,12 @@ class WebMonitor {
         // Listen for keyboard Enter submissions
         window.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
+            const active = document.activeElement;
+            const textBefore = active ? (active.value || active.innerText || active.textContent || '') : '';
             setTimeout(() => {
-              const active = document.activeElement;
-              const text = active ? (active.value || active.innerText || active.textContent || '') : '';
+              const activeAfter = document.activeElement;
+              const textAfter = activeAfter ? (activeAfter.value || activeAfter.innerText || activeAfter.textContent || '') : '';
+              const text = (textBefore && textBefore.trim().length > 0) ? textBefore : textAfter;
               if (text && text.trim().length > 0) {
                 const isAi = /chatgpt|claude|gemini|perplexity|copilot|poe|v0/i.test(platform);
                 emitEvent(text, isAi ? 'ai_query_submitted' : 'search_query_submitted');
@@ -251,15 +254,29 @@ class WebMonitor {
             const testid = (btn.getAttribute('data-testid') || '').toLowerCase();
             const textContent = (btn.textContent || '').toLowerCase();
             if (aria.includes('send') || aria.includes('submit') || testid.includes('send') || testid.includes('submit') || textContent.includes('search')) {
+              let textBefore = '';
+              const inputs = document.querySelectorAll('textarea, input[type="text"], input[type="search"], div[contenteditable="true"], div[role="textbox"]');
+              for (const input of inputs) {
+                const val = input.value || input.innerText || input.textContent || '';
+                if (val && val.trim().length > 0) {
+                  textBefore = val;
+                  break;
+                }
+              }
               setTimeout(() => {
-                const inputs = document.querySelectorAll('textarea, input[type="text"], input[type="search"], div[contenteditable="true"], div[role="textbox"]');
-                for (const input of inputs) {
-                  const text = input.value || input.innerText || input.textContent || '';
-                  if (text && text.trim().length > 0) {
-                    const isAi = /chatgpt|claude|gemini|perplexity|copilot|poe|v0/i.test(platform);
-                    emitEvent(text, isAi ? 'ai_query_submitted' : 'search_query_submitted');
-                    break;
+                let promptText = textBefore;
+                if (!promptText || promptText.trim().length === 0) {
+                  for (const input of inputs) {
+                    const val = input.value || input.innerText || input.textContent || '';
+                    if (val && val.trim().length > 0) {
+                      promptText = val;
+                      break;
+                    }
                   }
+                }
+                if (promptText && promptText.trim().length > 0) {
+                  const isAi = /chatgpt|claude|gemini|perplexity|copilot|poe|v0/i.test(platform);
+                  emitEvent(promptText, isAi ? 'ai_query_submitted' : 'search_query_submitted');
                 }
               }, 60);
             }

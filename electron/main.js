@@ -11,6 +11,10 @@ app.setName('WUElev8 Smart Proctoring Browser');
 
 // Optimize Chromium network service and GPU process stability on Windows
 app.commandLine.appendSwitch('disable-features', 'NetworkServiceSandbox');
+app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+
+// Standard modern Chrome User-Agent to avoid bot/automation blocks (Cloudflare Turnstile, ChatGPT, etc.)
+const STANDARD_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 // Prevent disruptive fatal dialog popups in production
 process.on('uncaughtException', (err) => {
@@ -765,27 +769,38 @@ if (!gotTheLock) {
     } catch (e) {
       console.warn('[Electron] Failed to initialize offlineStore:', e.message);
     }
-    // Set standard Chrome user agent without Electron/WUElev8 signature
-    // This allows modern web apps (ChatGPT, Google, etc.) to connect cleanly without bot blocks
+    // Set standard modern Chrome user agent without Electron/WUElev8 signature
+    // This allows modern web apps (ChatGPT, Claude, Google, etc.) to connect cleanly without Turnstile/Cloudflare bot blocks
     try {
-      const rawUA = session.defaultSession.getUserAgent();
-      const cleanUA = rawUA
-        .replace(/Electron\/\S+\s?/, '')
-        .replace(/wuelev8-smart-proctoring-browser\/\S+\s?/, '');
-      session.defaultSession.setUserAgent(cleanUA);
-    } catch (e) {
-      console.warn('[Electron] Failed to customize UserAgent:', e.message);
-    }
+      session.defaultSession.setUserAgent(STANDARD_CHROME_UA);
+      const examSession = session.fromPartition('persist:exam_workspace');
+      examSession.setUserAgent(STANDARD_CHROME_UA);
 
-    // Strip frame-blocking headers for permitted resources inside lockdown browser
-    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-      const responseHeaders = Object.assign({}, details.responseHeaders);
-      delete responseHeaders['x-frame-options'];
-      delete responseHeaders['X-Frame-Options'];
-      delete responseHeaders['content-security-policy'];
-      delete responseHeaders['Content-Security-Policy'];
-      callback({ responseHeaders });
-    });
+      const headerFilter = { urls: ['*://*/*'] };
+      const stripFrameHeaders = (details, callback) => {
+        // Strip frame-blocking headers for frames to allow permitted resources inside lockdown browser
+        // Leave API/WebSocket headers untouched to prevent chunked/SSE transfer corruption
+        if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame') {
+          const responseHeaders = Object.assign({}, details.responseHeaders);
+          delete responseHeaders['x-frame-options'];
+          delete responseHeaders['X-Frame-Options'];
+          delete responseHeaders['content-security-policy'];
+          delete responseHeaders['Content-Security-Policy'];
+          return callback({ responseHeaders });
+        }
+        callback({ responseHeaders: details.responseHeaders });
+      };
+
+      session.defaultSession.webRequest.onHeadersReceived(headerFilter, stripFrameHeaders);
+      examSession.webRequest.onHeadersReceived(headerFilter, stripFrameHeaders);
+
+      // Grant clipboard and media permissions for exam workspace partition
+      examSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        callback(true);
+      });
+    } catch (e) {
+      console.warn('[Electron] Failed to configure web sessions:', e.message);
+    }
 
     // Automatically monitor and protect any webview instances created in renderer
     app.on('web-contents-created', (_event, contents) => {
@@ -793,12 +808,47 @@ if (!gotTheLock) {
         console.log(`[Electron Webview] New WebContents instance created: ${contents.id}`);
 
         try {
-          const rawUA = contents.getUserAgent();
-          const cleanUA = rawUA
-            .replace(/Electron\/\S+\s?/, '')
-            .replace(/wuelev8-smart-proctoring-browser\/\S+\s?/, '');
-          contents.setUserAgent(cleanUA);
+          contents.setUserAgent(STANDARD_CHROME_UA);
         } catch {}
+
+        // Inject stealth script on webview to ensure navigator.webdriver is undefined and window.chrome is present
+        const stealthScript = `
+          try {
+            Object.defineProperty(navigator, 'webdriver', {
+              get: () => undefined,
+              configurable: true
+            });
+            if (!window.chrome) {
+              window.chrome = {
+                runtime: {},
+                loadTimes: function() {},
+                csi: function() {},
+                app: {}
+              };
+            }
+            if (!navigator.plugins || navigator.plugins.length === 0) {
+              Object.defineProperty(navigator, 'plugins', {
+                get: () => [
+                  { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                  { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' }
+                ]
+              });
+            }
+            if (!navigator.languages || navigator.languages.length === 0) {
+              Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+              });
+            }
+          } catch (e) {}
+        `;
+
+        contents.on('did-start-loading', () => {
+          contents.executeJavaScript(stealthScript).catch(() => {});
+        });
+
+        contents.on('dom-ready', () => {
+          contents.executeJavaScript(stealthScript).catch(() => {});
+        });
 
         // Attach passive proctoring web & prompt monitor
         webMonitor.attachToWebContents(contents);
@@ -827,6 +877,9 @@ if (!gotTheLock) {
         // Intercept new window / popup attempts inside the webview safely
         contents.setWindowOpenHandler(({ url }) => {
           try {
+            if (!url || url === 'about:blank') {
+              return { action: 'allow' };
+            }
             const evalResult = navigationPolicy.evaluateNavigation(url);
             if (!evalResult.allowed) {
               if (mainWindow && !mainWindow.isDestroyed()) {
