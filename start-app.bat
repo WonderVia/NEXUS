@@ -19,5 +19,5 @@ if %errorlevel% neq 0 (
 )
 
 echo [2/2] Launching Electron desktop window...
-call npx electron .
+node electron/run.js
 
