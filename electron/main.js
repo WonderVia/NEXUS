@@ -156,10 +156,10 @@ function createWindow() {
     height: Math.min(900, height),
     minWidth: 1024,
     minHeight: 700,
-    backgroundColor: '#070b14',
+    backgroundColor: '#ffffff',
     title: 'WUElev8 Smart Proctoring Browser',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
-    show: false,
+    show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -327,19 +327,14 @@ function createWindow() {
 
   const resolvedDistPath = fs.existsSync(packagedDistPath) ? packagedDistPath : localDistPath;
 
-  if (app.isPackaged || !process.env.VITE_DEV_SERVER_URL) {
-    if (fs.existsSync(resolvedDistPath)) {
-      console.log(`[Electron] Loading production frontend bundle: ${resolvedDistPath}`);
-      mainWindow.loadFile(resolvedDistPath);
-    } else {
-      console.log(`[Electron] Client dist not found locally, falling back to: ${FRONTEND_DEV_URL}`);
-      mainWindow.loadURL(FRONTEND_DEV_URL).catch(() => {
-        mainWindow.loadFile(resolvedDistPath);
-      });
-    }
+  if (app.isPackaged) {
+    console.log(`[Electron] Loading packaged bundle: ${resolvedDistPath}`);
+    mainWindow.loadFile(resolvedDistPath);
   } else {
-    console.log(`[Electron] Development mode: Loading Vite dev server at ${FRONTEND_DEV_URL}`);
-    mainWindow.loadURL(FRONTEND_DEV_URL).catch(() => {
+    // In development: connect to live Vite dev server if running, otherwise load local dist
+    console.log(`[Electron] Development mode: Loading ${FRONTEND_DEV_URL}`);
+    mainWindow.loadURL(FRONTEND_DEV_URL).catch((err) => {
+      console.log(`[Electron] Dev server connection failed (${err.message}), falling back to local bundle: ${resolvedDistPath}`);
       if (fs.existsSync(resolvedDistPath)) {
         mainWindow.loadFile(resolvedDistPath);
       }
@@ -348,7 +343,22 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    mainWindow.focus();
   });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  }, 1000);
 
   mainWindow.on('closed', () => {
     stopForegroundMonitoring();

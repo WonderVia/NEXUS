@@ -6,7 +6,7 @@
   "scripts": {
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
-    "dev:electron": "node -e \"const { spawn } = require('child_process'); const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE; const p = spawn('npx', ['electron', '.'], { stdio: 'inherit', shell: true, env }); p.on('exit', code => process.exit(code || 0));\"",
+    "dev:electron": "node -e \"const { spawn, execSync } = require('child_process'); try { execSync('taskkill /f /im electron.exe >nul 2>&1'); } catch {} const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE; const p = spawn('npx', ['electron', '.'], { stdio: 'inherit', shell: true, env }); p.on('exit', code => process.exit(code || 0));\"",
     "seed": "npm --prefix server run seed",
     "build:client": "npm --prefix client run build",
     "build:server": "npm --prefix server run build",
