@@ -1,6 +1,13 @@
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const path = require('path');
 const electron = require('electron');
+
+// Clean up any lingering background Electron processes to release single-instance lock
+if (process.platform === 'win32') {
+  try {
+    execSync('taskkill /f /im electron.exe >nul 2>&1');
+  } catch {}
+}
 
 // Remove ELECTRON_RUN_AS_NODE to ensure Electron launches the full GUI runtime
 const env = { ...process.env };

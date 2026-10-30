@@ -11,6 +11,15 @@ app.setName('WUElev8 Smart Proctoring Browser');
 // Optimize Chromium network service and GPU process stability on Windows
 app.commandLine.appendSwitch('disable-features', 'NetworkServiceSandbox');
 
+// Prevent disruptive fatal dialog popups in production
+process.on('uncaughtException', (err) => {
+  console.error('[Electron Main Process Uncaught Exception]:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Electron Main Process Unhandled Rejection]:', reason);
+});
+
 let mainWindow = null;
 let isExamMode = false;
 let blurStartTime = null;
@@ -656,38 +665,47 @@ if (!gotTheLock) {
         // Attach passive proctoring web & prompt monitor
         webMonitor.attachToWebContents(contents);
 
-        // Enforce URL navigation policy on the webview
+        // Enforce URL navigation policy on the webview safely
         contents.on('will-navigate', (e, navUrl) => {
-          const evalResult = navigationPolicy.evaluateNavigation(navUrl);
-          if (!evalResult.allowed) {
-            e.preventDefault();
-            console.warn(`[Webview Policy Alert] Blocked navigation inside webview to: ${navUrl}`);
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('security:navigation-blocked', {
-                url: navUrl,
-                reason: evalResult.reason,
-                isAi: evalResult.isAi,
-                message: evalResult.message
-              });
+          try {
+            const evalResult = navigationPolicy.evaluateNavigation(navUrl);
+            if (!evalResult.allowed) {
+              e.preventDefault();
+              console.warn(`[Webview Policy Alert] Blocked navigation inside webview to: ${navUrl}`);
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('security:navigation-blocked', {
+                  url: navUrl,
+                  reason: evalResult.reason,
+                  isAi: evalResult.isAi,
+                  message: evalResult.message
+                });
+              }
             }
+          } catch (err) {
+            console.error('[Webview Navigation Error]:', err.message);
           }
         });
 
-        // Intercept new window / popup attempts inside the webview
+        // Intercept new window / popup attempts inside the webview safely
         contents.setWindowOpenHandler(({ url }) => {
-          const evalResult = navigationPolicy.evaluateNavigation(url);
-          if (!evalResult.allowed) {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('security:navigation-blocked', {
-                url,
-                reason: evalResult.reason,
-                message: evalResult.message
-              });
+          try {
+            const evalResult = navigationPolicy.evaluateNavigation(url);
+            if (!evalResult.allowed) {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('security:navigation-blocked', {
+                  url,
+                  reason: evalResult.reason,
+                  message: evalResult.message
+                });
+              }
+              return { action: 'deny' };
             }
+            contents.loadURL(url);
+            return { action: 'deny' };
+          } catch (err) {
+            console.error('[Webview Window Open Error]:', err.message);
             return { action: 'deny' };
           }
-          contents.loadURL(url);
-          return { action: 'deny' };
         });
       }
     });
