@@ -569,6 +569,7 @@ ipcMain.handle('system:heartbeat', async (event, clientState) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('offline:connectivity-changed', {
         isOnline: wasBackendHealthy,
+        online: wasBackendHealthy,
         timestamp: Date.now()
       });
     }

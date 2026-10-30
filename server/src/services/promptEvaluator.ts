@@ -7,6 +7,8 @@
  * seeking, lazy MCQ copy-pasting, cheating attempts).
  */
 
+import { CONFIG } from '../config.js';
+
 export interface PromptCriteriaScores {
   criticalThinkingVsAnswerSeeking: number; // 0 to 30
   contextAndFraming: number;              // 0 to 25
@@ -20,6 +22,19 @@ export type PromptQualityTier =
   | 'MODERATE'
   | 'POOR_DIRECT_ANSWER'
   | 'LAZY_INPUT';
+
+export interface GeminiPromptAnalysis {
+  isGoodPrompt: boolean;
+  qualityScore: number;
+  tier: PromptQualityTier;
+  verdict: 'GOOD' | 'BAD';
+  aiReasoning: string;
+  strengths: string[];
+  weaknesses: string[];
+  recommendation: string;
+  evaluatedByModel: string;
+  evaluatedAt: string;
+}
 
 export interface PromptEvaluationResult {
   cleanPrompt: string;
@@ -35,6 +50,7 @@ export interface PromptEvaluationResult {
   strengths: string[];
   weaknesses: string[];
   recommendation: string;
+  geminiEvaluation?: GeminiPromptAnalysis | null;
 }
 
 export interface PromptAnalyticsAggregate {
@@ -164,9 +180,6 @@ export function extractCleanPrompt(rawDetails: string): string {
   return cleaned;
 }
 
-/**
- * Evaluates a candidate prompt against the 5 WUElev8 Judging Rubric Dimensions.
- */
 export function evaluatePrompt(rawPromptOrDetails: string): PromptEvaluationResult {
   const cleanPrompt = extractCleanPrompt(rawPromptOrDetails);
   const promptLower = cleanPrompt.toLowerCase();
@@ -522,4 +535,99 @@ export function aggregatePromptAnalytics(events: any[]): PromptAnalyticsAggregat
     antiPatternFrequency,
     candidatePersonas
   };
+}
+
+// In-memory cache for fast, zero-redundancy lookups
+const geminiCache = new Map<string, GeminiPromptAnalysis>();
+
+/**
+ * Deep semantic evaluation of candidate prompts using Google Gemini AI.
+ * Categorizes prompts into Good Prompt (Critical Thinking / Framing) vs Bad Prompt (Cheating / Direct Answer Seeking).
+ */
+export async function evaluatePromptWithGemini(
+  promptText: string,
+  forceFresh = false
+): Promise<GeminiPromptAnalysis | null> {
+  const clean = (promptText || '').trim();
+  if (!clean || clean.length < 5) return null;
+
+  if (!forceFresh && geminiCache.has(clean)) {
+    return geminiCache.get(clean)!;
+  }
+
+  const apiKey = CONFIG.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn('[Gemini Evaluator] No GEMINI_API_KEY found, skipping deep AI evaluation');
+    return null;
+  }
+
+  const systemInstruction = `You are an institutional proctoring judge evaluating candidate prompts in an AI-monitored examination. Classify the candidate's prompt as GOOD (high quality prompt engineering, critical inquiry, problem decomposition) or BAD (direct answer seeking, cheating, low effort). Respond strictly in valid JSON with: { "isGoodPrompt": boolean, "qualityScore": number, "tier": "EXEMPLARY" | "GOOD" | "MODERATE" | "POOR_DIRECT_ANSWER" | "LAZY_INPUT", "verdict": "GOOD" | "BAD", "aiReasoning": string, "strengths": string[], "weaknesses": string[], "recommendation": string }`;
+
+  const payload = {
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: `${systemInstruction}\n\nCandidate Prompt to Evaluate:\n"${clean}"`
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.2
+    }
+  };
+
+  const candidateModels = [
+    'models/gemini-flash-lite-latest',
+    'models/gemini-3.8-flash',
+    'models/gemini-flash-latest'
+  ];
+
+  for (const model of candidateModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${apiKey}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        continue; // Try next model if 503 or 404
+      }
+
+      const data: any = await response.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) continue;
+
+      const parsed = JSON.parse(rawText);
+      const analysis: GeminiPromptAnalysis = {
+        isGoodPrompt: Boolean(parsed.isGoodPrompt),
+        qualityScore: typeof parsed.qualityScore === 'number' ? parsed.qualityScore : (parsed.isGoodPrompt ? 75 : 20),
+        tier: parsed.tier || (parsed.isGoodPrompt ? 'GOOD' : 'POOR_DIRECT_ANSWER'),
+        verdict: parsed.verdict === 'GOOD' ? 'GOOD' : (parsed.isGoodPrompt ? 'GOOD' : 'BAD'),
+        aiReasoning: parsed.aiReasoning || 'AI evaluation complete.',
+        strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
+        weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses : [],
+        recommendation: parsed.recommendation || '',
+        evaluatedByModel: model.replace('models/', ''),
+        evaluatedAt: new Date().toISOString()
+      };
+
+      geminiCache.set(clean, analysis);
+      return analysis;
+    } catch (err: any) {
+      console.warn(`[Gemini Evaluator] Model ${model} evaluation error:`, err?.message || err);
+    }
+  }
+
+  return null;
+}
+
+export function getCachedGeminiEvaluation(promptText: string): GeminiPromptAnalysis | null {
+  const clean = (promptText || '').trim();
+  return geminiCache.get(clean) || null;
 }

@@ -693,7 +693,9 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
 
     try {
       // 1. If currently connected, prioritize online submission
-      if (offlineState.isOnline) {
+      const isActuallyOnline = offlineState.isOnline || (typeof navigator !== 'undefined' && navigator.onLine);
+      if (isActuallyOnline) {
+        offlineSyncManager.setOnline(true);
         try {
           const syncRes = await offlineSyncManager.syncNow(true);
           if (syncRes && syncRes.isFinalized) {
@@ -1757,6 +1759,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
               <button
                 onClick={async () => {
                   try {
+                    offlineSyncManager.setOnline(true);
                     let res = await offlineSyncManager.syncNow(true);
                     if (!res || !res.isFinalized) {
                       const directRes = await attemptsAPI.submit(attempt.id);

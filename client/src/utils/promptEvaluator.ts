@@ -21,6 +21,19 @@ export type PromptQualityTier =
   | 'POOR_DIRECT_ANSWER'
   | 'LAZY_INPUT';
 
+export interface GeminiPromptAnalysis {
+  isGoodPrompt: boolean;
+  qualityScore: number;
+  tier: PromptQualityTier;
+  verdict: 'GOOD' | 'BAD';
+  aiReasoning: string;
+  strengths: string[];
+  weaknesses: string[];
+  recommendation: string;
+  evaluatedByModel: string;
+  evaluatedAt: string;
+}
+
 export interface PromptEvaluationResult {
   cleanPrompt: string;
   qualityScore: number; // 0 - 100
@@ -35,6 +48,7 @@ export interface PromptEvaluationResult {
   strengths: string[];
   weaknesses: string[];
   recommendation: string;
+  geminiEvaluation?: GeminiPromptAnalysis | null;
 }
 
 export interface PromptAnalyticsAggregate {

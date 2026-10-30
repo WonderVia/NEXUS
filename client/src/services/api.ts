@@ -306,6 +306,13 @@ export const analyticsAPI = {
     return request<{ summary: any; events: ProctoringEvent[] }>(`/admin/prompt-analytics${query}`);
   },
 
+  evaluatePromptWithGemini: (promptText: string, forceFresh = false) => {
+    return request<{ heuristic: any; gemini: any; hasGemini: boolean }>('/admin/evaluate-prompt-gemini', {
+      method: 'POST',
+      body: JSON.stringify({ promptText, forceFresh })
+    });
+  },
+
   getStudents: () => request<{ students: User[] }>('/admin/students'),
 
   getExportUrl: (type: 'results' | 'events', assessmentId?: string) => {

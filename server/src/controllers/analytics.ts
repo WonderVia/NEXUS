@@ -1,7 +1,12 @@
 import { Response } from 'express';
 import { db } from '../db/schema.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
-import { evaluatePrompt, aggregatePromptAnalytics } from '../services/promptEvaluator.js';
+import { 
+  evaluatePrompt, 
+  aggregatePromptAnalytics, 
+  evaluatePromptWithGemini, 
+  getCachedGeminiEvaluation 
+} from '../services/promptEvaluator.js';
 
 export function getAdminAnalytics(req: AuthenticatedRequest, res: Response) {
   try {
@@ -281,10 +286,18 @@ export function getPromptEvaluationSummary(req: AuthenticatedRequest, res: Respo
     query += ' ORDER BY pe.timestamp DESC';
     const rawEvents: any[] = db.prepare(query).all(...params);
 
-    const eventsWithAnalysis = rawEvents.map(e => ({
-      ...e,
-      promptAnalysis: evaluatePrompt(e.details || '')
-    }));
+    const eventsWithAnalysis = rawEvents.map(e => {
+      const promptText = e.details || '';
+      const promptAnalysis = evaluatePrompt(promptText);
+      const cached = getCachedGeminiEvaluation(promptText);
+      if (cached) {
+        promptAnalysis.geminiEvaluation = cached;
+      }
+      return {
+        ...e,
+        promptAnalysis
+      };
+    });
 
     const summary = aggregatePromptAnalytics(rawEvents);
 
@@ -295,5 +308,26 @@ export function getPromptEvaluationSummary(req: AuthenticatedRequest, res: Respo
   } catch (err: any) {
     console.error('Prompt evaluation summary error:', err);
     return res.status(500).json({ error: 'Failed to retrieve prompt analytics' });
+  }
+}
+
+export async function evaluatePromptGeminiEndpoint(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { promptText, forceFresh } = req.body;
+    if (!promptText || typeof promptText !== 'string') {
+      return res.status(400).json({ error: 'promptText string is required in request body' });
+    }
+
+    const heuristic = evaluatePrompt(promptText);
+    const gemini = await evaluatePromptWithGemini(promptText, Boolean(forceFresh));
+
+    return res.json({
+      heuristic,
+      gemini,
+      hasGemini: Boolean(gemini)
+    });
+  } catch (err: any) {
+    console.error('Gemini evaluation error:', err);
+    return res.status(500).json({ error: 'Failed evaluating prompt with Gemini: ' + (err.message || 'Server error') });
   }
 }

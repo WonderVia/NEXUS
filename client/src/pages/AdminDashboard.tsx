@@ -9,7 +9,7 @@ import {
   Activity, ShieldCheck, ShieldX, Terminal, ExternalLink, AlertOctagon,
   AlertTriangle, ChevronDown, ChevronUp, Award, HelpCircle, Layers, FileText
 } from 'lucide-react';
-import { evaluatePrompt, aggregatePromptAnalytics, PromptEvaluationResult } from '../utils/promptEvaluator';
+import { evaluatePrompt, aggregatePromptAnalytics, PromptEvaluationResult, GeminiPromptAnalysis } from '../utils/promptEvaluator';
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'analytics' | 'attempts' | 'events' | 'prompts' | 'assessments' | 'students'>('analytics');
@@ -37,6 +37,22 @@ export const AdminDashboard: React.FC = () => {
   const [promptQualityFilter, setPromptQualityFilter] = useState<'all' | 'exemplary' | 'good' | 'moderate' | 'poor' | 'direct_answer'>('all');
   const [expandedPromptRubricId, setExpandedPromptRubricId] = useState<string | null>(null);
   const [showJudgingGuideModal, setShowJudgingGuideModal] = useState(false);
+  const [evaluatingGeminiId, setEvaluatingGeminiId] = useState<string | null>(null);
+  const [geminiEvaluations, setGeminiEvaluations] = useState<Record<string, GeminiPromptAnalysis>>({});
+
+  const handleDeepEvaluateWithGemini = async (eventId: string, promptText: string) => {
+    try {
+      setEvaluatingGeminiId(eventId);
+      const res = await analyticsAPI.evaluatePromptWithGemini(promptText);
+      if (res && res.gemini) {
+        setGeminiEvaluations(prev => ({ ...prev, [eventId]: res.gemini }));
+      }
+    } catch (err: any) {
+      alert('Gemini Deep Evaluation: ' + (err.message || 'AI service not reachable'));
+    } finally {
+      setEvaluatingGeminiId(null);
+    }
+  };
 
   // Modals
   const [selectedAttemptAudit, setSelectedAttemptAudit] = useState<{
@@ -1097,6 +1113,57 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Google Gemini AI Deep Evaluation Box */}
+                    {(() => {
+                      const gemini = geminiEvaluations[promptEv.id] || analysis.geminiEvaluation;
+                      if (gemini) {
+                        return (
+                          <div className="p-3.5 border-2 border-black bg-gradient-to-r from-neutral-900 to-black text-white mb-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-neutral-700">
+                              <div className="flex items-center gap-2">
+                                <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                                <span className={`font-extrabold text-xs uppercase tracking-[0.14em] px-2 py-0.5 border ${
+                                  gemini.verdict === 'GOOD' ? 'bg-emerald-950 text-emerald-400 border-emerald-500' : 'bg-red-950 text-red-400 border-red-500'
+                                }`}>
+                                  Google Gemini AI Judge: {gemini.verdict === 'GOOD' ? 'GOOD PROMPT' : 'BAD PROMPT (CHEATING / ANSWER SEEKING)'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] font-mono text-neutral-400">
+                                <span>Model: {gemini.evaluatedByModel}</span>
+                                <span>•</span>
+                                <span className="font-bold text-white">AI Score: {gemini.qualityScore}/100</span>
+                              </div>
+                            </div>
+                            <p className="text-xs font-mono text-neutral-200 mt-2.5 leading-relaxed bg-neutral-900/60 p-2.5 border border-neutral-800">
+                              "{gemini.aiReasoning}"
+                            </p>
+                            {gemini.recommendation && (
+                              <div className="mt-2 text-[11px] font-mono text-emerald-300">
+                                <span className="font-bold text-white uppercase">AI Pedagogical Guidance:</span> {gemini.recommendation}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="flex items-center justify-between p-2.5 bg-[#f5f5f5] border border-neutral-300 mb-3 text-xs">
+                          <div className="flex items-center gap-2 text-neutral-700">
+                            <Bot className="w-4 h-4 text-neutral-500" />
+                            <span className="font-mono text-[11px]">Instant Rubric Evaluated. Deep Google Gemini AI critique available.</span>
+                          </div>
+                          <button
+                            onClick={() => handleDeepEvaluateWithGemini(promptEv.id, analysis.cleanPrompt)}
+                            disabled={evaluatingGeminiId === promptEv.id}
+                            className="px-3 py-1 bg-black hover:bg-neutral-800 text-white font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            <Sparkles className={`w-3 h-3 text-emerald-400 ${evaluatingGeminiId === promptEv.id ? 'animate-spin' : ''}`} />
+                            <span>{evaluatingGeminiId === promptEv.id ? 'Analyzing...' : 'Deep Evaluate with Gemini'}</span>
+                          </button>
+                        </div>
+                      );
+                    })()}
+
                     {/* Clean Extracted Prompt Box */}
                     <div className="bg-[#f0f0f0] border-2 border-black p-4 my-2">
                       <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 mb-1.5 flex items-center justify-between">
@@ -1626,6 +1693,16 @@ export const AdminDashboard: React.FC = () => {
                                         - {a}
                                       </span>
                                     ))}
+                                  </div>
+                                )}
+
+                                {evalResult.geminiEvaluation && (
+                                  <div className="mt-2 p-2.5 bg-neutral-950 text-white text-[10px] font-mono border border-neutral-700">
+                                    <div className="flex items-center justify-between text-emerald-400 font-bold mb-1">
+                                      <span>Google Gemini AI Judge: {evalResult.geminiEvaluation.verdict === 'GOOD' ? 'GOOD PROMPT' : 'BAD PROMPT (CHEATING)'}</span>
+                                      <span>{evalResult.geminiEvaluation.qualityScore}/100</span>
+                                    </div>
+                                    <p className="text-neutral-300 leading-relaxed">"{evalResult.geminiEvaluation.aiReasoning}"</p>
                                   </div>
                                 )}
                               </div>

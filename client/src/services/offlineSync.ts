@@ -40,8 +40,9 @@ class OfflineSyncManager {
 
       // Listen to Electron connectivity changes if available
       if (window.electronAPI?.offline?.onConnectivityChanged) {
-        this.cleanupElectronListener = window.electronAPI.offline.onConnectivityChanged((data) => {
-          this.setOnline(data.online);
+        this.cleanupElectronListener = window.electronAPI.offline.onConnectivityChanged((data: any) => {
+          const online = Boolean(data?.isOnline ?? data?.online ?? (typeof navigator !== 'undefined' ? navigator.onLine : true));
+          this.setOnline(online);
         });
       }
     }
