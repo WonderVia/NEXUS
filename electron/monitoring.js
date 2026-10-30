@@ -15,8 +15,8 @@ const MONITORED_DOMAINS = [
   { pattern: /chatgpt\.com|openai\.com/i, label: 'ChatGPT (OpenAI)' },
   { pattern: /claude\.ai|anthropic\.com/i, label: 'Claude (Anthropic)' },
   { pattern: /gemini\.google\.com/i, label: 'Google Gemini' },
-  { pattern: /bing\.com\/search/i, label: 'Bing Search' },
-  { pattern: /google\.[a-z.]+\/search/i, label: 'Google Search' },
+  { pattern: /bing\.com/i, label: 'Bing' },
+  { pattern: /google\.[a-z.]+/i, label: 'Google' },
   { pattern: /perplexity\.ai/i, label: 'Perplexity AI' },
   { pattern: /copilot\.microsoft\.com/i, label: 'Microsoft Copilot' },
   { pattern: /poe\.com/i, label: 'Poe AI' },
@@ -148,11 +148,18 @@ class WebMonitor {
         await this.reportViolation({
           eventType: 'external_site_visit',
           severity: 'medium',
-          details: `Candidate loaded monitored resource: ${label}.`,
+          details: `Candidate loaded monitored resource: ${label} (${currentUrl}).`,
           url: currentUrl
         });
 
         // Inject DOM content monitoring script
+        this.injectContentScript(webContents, label);
+      }
+    });
+
+    webContents.on('did-navigate-in-page', async (_event, inPageUrl) => {
+      const label = this.classifyUrl(inPageUrl);
+      if (label) {
         this.injectContentScript(webContents, label);
       }
     });
@@ -178,9 +185,6 @@ class WebMonitor {
   injectContentScript(webContents, platformLabel) {
     const injectionScript = `
       (function() {
-        if (window.__wuelev8_proctor_installed) return;
-        window.__wuelev8_proctor_installed = true;
-
         const platform = ${JSON.stringify(platformLabel)};
         let lastReported = '';
 
@@ -201,7 +205,7 @@ class WebMonitor {
         function extractSearchQuery() {
           try {
             const url = new URL(window.location.href);
-            const q = url.searchParams.get('q') || url.searchParams.get('query');
+            const q = url.searchParams.get('q') || url.searchParams.get('query') || url.searchParams.get('p');
             if (q) {
               emitEvent(q, 'search_query_submitted');
             }
@@ -210,32 +214,50 @@ class WebMonitor {
 
         extractSearchQuery();
 
+        if (window.__wuelev8_proctor_installed) return;
+        window.__wuelev8_proctor_installed = true;
+
         // Listen for keyboard Enter submissions
         window.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             setTimeout(() => {
               const active = document.activeElement;
               const text = active ? (active.value || active.innerText || active.textContent || '') : '';
-              if (text) {
-                emitEvent(text, 'ai_query_submitted');
+              if (text && text.trim().length > 0) {
+                const isAi = /chatgpt|claude|gemini|perplexity|copilot|poe|v0/i.test(platform);
+                emitEvent(text, isAi ? 'ai_query_submitted' : 'search_query_submitted');
               }
             }, 60);
           }
         }, true);
 
+        // Listen for form submissions
+        window.addEventListener('submit', (e) => {
+          const form = e.target;
+          if (form) {
+            const input = form.querySelector('input[type="text"], input[type="search"], textarea, input:not([type])');
+            if (input && input.value) {
+              const isAi = /chatgpt|claude|gemini|perplexity|copilot|poe|v0/i.test(platform);
+              emitEvent(input.value, isAi ? 'ai_query_submitted' : 'search_query_submitted');
+            }
+          }
+        }, true);
+
         // Listen for send button clicks
         window.addEventListener('click', (e) => {
-          const btn = e.target.closest('button');
+          const btn = e.target && e.target.closest ? e.target.closest('button, [role="button"]') : null;
           if (btn) {
             const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
             const testid = (btn.getAttribute('data-testid') || '').toLowerCase();
-            if (aria.includes('send') || aria.includes('submit') || testid.includes('send') || testid.includes('submit')) {
+            const textContent = (btn.textContent || '').toLowerCase();
+            if (aria.includes('send') || aria.includes('submit') || testid.includes('send') || testid.includes('submit') || textContent.includes('search')) {
               setTimeout(() => {
-                const inputs = document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]');
+                const inputs = document.querySelectorAll('textarea, input[type="text"], input[type="search"], div[contenteditable="true"], div[role="textbox"]');
                 for (const input of inputs) {
                   const text = input.value || input.innerText || input.textContent || '';
                   if (text && text.trim().length > 0) {
-                    emitEvent(text, 'ai_query_submitted');
+                    const isAi = /chatgpt|claude|gemini|perplexity|copilot|poe|v0/i.test(platform);
+                    emitEvent(text, isAi ? 'ai_query_submitted' : 'search_query_submitted');
                     break;
                   }
                 }
@@ -246,9 +268,7 @@ class WebMonitor {
       })();
     `;
 
-    webContents.executeJavaScript(injectionScript).catch(err => {
-      console.warn('[WebMonitor] Script injection failed:', err.message);
-    });
+    webContents.executeJavaScript(injectionScript).catch(() => {});
   }
 }
 

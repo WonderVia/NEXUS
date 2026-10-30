@@ -217,6 +217,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
       webSecurity: true,
+      webviewTag: true,
       allowRunningInsecureContent: false
     }
   });
@@ -617,6 +618,18 @@ if (!gotTheLock) {
 
   // App Lifecycle
   app.whenReady().then(() => {
+    // Set standard Chrome user agent without Electron/WUElev8 signature
+    // This allows modern web apps (ChatGPT, Google, etc.) to connect cleanly without bot blocks
+    try {
+      const rawUA = session.defaultSession.getUserAgent();
+      const cleanUA = rawUA
+        .replace(/Electron\/\S+\s?/, '')
+        .replace(/wuelev8-smart-proctoring-browser\/\S+\s?/, '');
+      session.defaultSession.setUserAgent(cleanUA);
+    } catch (e) {
+      console.warn('[Electron] Failed to customize UserAgent:', e.message);
+    }
+
     // Strip frame-blocking headers for permitted resources inside lockdown browser
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       const responseHeaders = Object.assign({}, details.responseHeaders);
@@ -625,6 +638,58 @@ if (!gotTheLock) {
       delete responseHeaders['content-security-policy'];
       delete responseHeaders['Content-Security-Policy'];
       callback({ responseHeaders });
+    });
+
+    // Automatically monitor and protect any webview instances created in renderer
+    app.on('web-contents-created', (_event, contents) => {
+      if (contents.getType() === 'webview') {
+        console.log(`[Electron Webview] New WebContents instance created: ${contents.id}`);
+
+        try {
+          const rawUA = contents.getUserAgent();
+          const cleanUA = rawUA
+            .replace(/Electron\/\S+\s?/, '')
+            .replace(/wuelev8-smart-proctoring-browser\/\S+\s?/, '');
+          contents.setUserAgent(cleanUA);
+        } catch {}
+
+        // Attach passive proctoring web & prompt monitor
+        webMonitor.attachToWebContents(contents);
+
+        // Enforce URL navigation policy on the webview
+        contents.on('will-navigate', (e, navUrl) => {
+          const evalResult = navigationPolicy.evaluateNavigation(navUrl);
+          if (!evalResult.allowed) {
+            e.preventDefault();
+            console.warn(`[Webview Policy Alert] Blocked navigation inside webview to: ${navUrl}`);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('security:navigation-blocked', {
+                url: navUrl,
+                reason: evalResult.reason,
+                isAi: evalResult.isAi,
+                message: evalResult.message
+              });
+            }
+          }
+        });
+
+        // Intercept new window / popup attempts inside the webview
+        contents.setWindowOpenHandler(({ url }) => {
+          const evalResult = navigationPolicy.evaluateNavigation(url);
+          if (!evalResult.allowed) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('security:navigation-blocked', {
+                url,
+                reason: evalResult.reason,
+                message: evalResult.message
+              });
+            }
+            return { action: 'deny' };
+          }
+          contents.loadURL(url);
+          return { action: 'deny' };
+        });
+      }
     });
 
     createWindow();

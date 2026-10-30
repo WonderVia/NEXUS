@@ -64,9 +64,8 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
   const [historyIdx, setHistoryIdx] = useState<number>(0);
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
 
-  // In-Browser AI Prompt Tester Console
-  const [candidatePromptInput, setCandidatePromptInput] = useState<string>('');
-  const [promptSubmitStatus, setPromptSubmitStatus] = useState<string | null>(null);
+  // Webview Reference for In-App Browser Controls
+  const webviewRef = useRef<any>(null);
 
   // Activity Log & Lockdown State
   const [activeTabMode, setActiveTabMode] = useState<'browser' | 'activity'>('browser');
@@ -135,40 +134,6 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
             status: 'allowed'
           }
         ];
-
-        // If AI is Allowed by Policy, supply pre-configured AI Browser Tabs
-        if (assessment.policy.aiUsage === 'allowed') {
-          initialTabs.push({
-            id: 'tab-chatgpt',
-            title: 'ChatGPT Assistant',
-            url: 'https://chatgpt.com',
-            isAiTab: true,
-            status: 'allowed'
-          });
-          initialTabs.push({
-            id: 'tab-claude',
-            title: 'Claude AI',
-            url: 'https://claude.ai',
-            isAiTab: true,
-            status: 'allowed'
-          });
-        }
-
-        // Add permitted external websites if configured
-        if (Array.isArray(assessment.policy.permittedWebsites)) {
-          assessment.policy.permittedWebsites.forEach((site, sIdx) => {
-            const cleanUrl = site.startsWith('http') ? site : `https://${site}`;
-            try {
-              const host = new URL(cleanUrl).hostname;
-              initialTabs.push({
-                id: `tab-permitted-${sIdx}`,
-                title: host.replace(/^www\./, ''),
-                url: cleanUrl,
-                status: 'allowed'
-              });
-            } catch {}
-          });
-        }
 
         setBrowserTabs(initialTabs);
 
@@ -665,17 +630,101 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
     setActiveTabMode('browser');
   };
 
+  // Webview Lifecycle Listeners
+  useEffect(() => {
+    const wv = webviewRef.current;
+    if (!wv) return;
+
+    const onDidNavigate = (e: any) => {
+      if (e.url) {
+        setUrlInput(e.url);
+        setBrowserTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, url: e.url } : t));
+      }
+    };
+
+    const onTitleUpdated = (e: any) => {
+      if (e.title) {
+        setBrowserTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, title: e.title } : t));
+      }
+    };
+
+    const onStartLoading = () => setIsNavigating(true);
+    const onStopLoading = () => setIsNavigating(false);
+
+    try {
+      wv.addEventListener('did-navigate', onDidNavigate);
+      wv.addEventListener('did-navigate-in-page', onDidNavigate);
+      wv.addEventListener('page-title-updated', onTitleUpdated);
+      wv.addEventListener('did-start-loading', onStartLoading);
+      wv.addEventListener('did-stop-loading', onStopLoading);
+    } catch {}
+
+    return () => {
+      try {
+        wv.removeEventListener('did-navigate', onDidNavigate);
+        wv.removeEventListener('did-navigate-in-page', onDidNavigate);
+        wv.removeEventListener('page-title-updated', onTitleUpdated);
+        wv.removeEventListener('did-start-loading', onStartLoading);
+        wv.removeEventListener('did-stop-loading', onStopLoading);
+      } catch {}
+    };
+  }, [activeTabId]);
+
+  const handleBack = () => {
+    if (webviewRef.current && typeof webviewRef.current.goBack === 'function') {
+      try {
+        if (webviewRef.current.canGoBack()) webviewRef.current.goBack();
+      } catch {}
+    } else if (historyIdx > 0) {
+      setHistoryIdx(prev => prev - 1);
+      handleNavigateUrl(browserHistory[historyIdx - 1]);
+    }
+  };
+
+  const handleForward = () => {
+    if (webviewRef.current && typeof webviewRef.current.goForward === 'function') {
+      try {
+        if (webviewRef.current.canGoForward()) webviewRef.current.goForward();
+      } catch {}
+    } else if (historyIdx < browserHistory.length - 1) {
+      setHistoryIdx(prev => prev + 1);
+      handleNavigateUrl(browserHistory[historyIdx + 1]);
+    }
+  };
+
+  const handleReload = () => {
+    if (webviewRef.current && typeof webviewRef.current.reload === 'function') {
+      try {
+        webviewRef.current.reload();
+      } catch {}
+    } else {
+      handleNavigateUrl(urlInput);
+    }
+  };
+
+  const handleHome = () => {
+    setActiveTabId('tab-exam');
+    setUrlInput('wuelev8://examination-session');
+  };
+
   const handleNavigateUrl = async (targetUrl: string) => {
     if (!targetUrl || !targetUrl.trim()) return;
-    let url = targetUrl.trim();
+    const raw = targetUrl.trim();
 
-    if (url === 'wuelev8://examination-session') {
+    if (raw === 'wuelev8://examination-session') {
       setActiveTabId('tab-exam');
-      setUrlInput(url);
+      setUrlInput(raw);
       return;
     }
 
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    // Determine if candidate typed a search query or a website domain
+    const isSearchQuery = raw.includes(' ') || 
+      (!raw.includes('.') && !raw.startsWith('http://') && !raw.startsWith('https://') && !raw.startsWith('localhost'));
+
+    let url = raw;
+    if (isSearchQuery) {
+      url = `https://www.google.com/search?q=${encodeURIComponent(raw)}`;
+    } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = `https://${url}`;
     }
 
@@ -699,20 +748,28 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
 
     setIsNavigating(false);
 
-    // Look for existing tab or create new tab
-    const existingTab = browserTabs.find(t => t.url.toLowerCase() === url.toLowerCase());
-    if (existingTab) {
-      existingTab.status = evaluation.allowed ? 'allowed' : 'blocked';
-      existingTab.blockedReason = evaluation.message;
-      existingTab.isAi = evaluation.isAi;
-      setActiveTabId(existingTab.id);
+    let title = isSearchQuery ? `Search: ${raw}` : 'Web Resource';
+    try {
+      const parsed = new URL(url);
+      title = parsed.hostname.replace(/^www\./, '');
+      const queryParam = parsed.searchParams.get('q');
+      if (queryParam) {
+        title = `Google: ${queryParam}`;
+      }
+    } catch {}
+
+    // Update active tab if not exam tab, else open new tab
+    const existingActiveTab = browserTabs.find(t => t.id === activeTabId && !t.isExamTab);
+    if (existingActiveTab) {
+      existingActiveTab.url = url;
+      existingActiveTab.title = title;
+      existingActiveTab.status = evaluation.allowed ? 'allowed' : 'blocked';
+      existingActiveTab.blockedReason = evaluation.message;
+      existingActiveTab.isAi = evaluation.isAi;
+      existingActiveTab.isAiTab = evaluation.isAi;
+      setBrowserTabs([...browserTabs]);
       setUrlInput(url);
     } else {
-      let title = 'Web Resource';
-      try {
-        title = new URL(url).hostname.replace(/^www\./, '');
-      } catch {}
-
       const newTab: BrowserTab = {
         id: `tab-user-${Date.now()}`,
         title,
@@ -728,7 +785,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
       setUrlInput(url);
     }
 
-    // Record violation if navigation was prohibited
+    // Auto-record violation or passive search/browsing telemetry
     if (!evaluation.allowed) {
       const details = `Candidate attempted navigation to unauthorized URL: ${url}. (${evaluation.message})`;
       logProctorViolation('unauthorized_navigation', 'high', details, 0, 'browser_navigation');
@@ -740,8 +797,15 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
         timestamp: new Date()
       });
     } else {
-      // Permitted navigation record
-      logProctorViolation('external_site_visit', 'low', `Candidate navigated to permitted web resource: ${url}`, 0, 'electron_browser');
+      logProctorViolation(
+        isSearchQuery ? 'search_query_submitted' : 'external_site_visit',
+        'low',
+        isSearchQuery ? `Search query: "${raw}" on Google` : `Candidate navigated to web resource: ${url}`,
+        0,
+        'electron_browser',
+        isSearchQuery ? raw : undefined,
+        url
+      );
     }
   };
 
@@ -754,43 +818,6 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
       setActiveTabId('tab-exam');
       setUrlInput('wuelev8://examination-session');
     }
-  };
-
-  // Submit Prompt from In-Browser AI Console (USP preserve)
-  const handleCandidatePromptSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!candidatePromptInput.trim()) return;
-
-    const promptText = candidatePromptInput.trim();
-    setCandidatePromptInput('');
-    setPromptSubmitStatus('Prompt submitted & logged to proctor audit trail.');
-
-    const activeTab = browserTabs.find(t => t.id === activeTabId);
-    const platform = activeTab?.title || 'ChatGPT Assistant';
-    const activeUrl = activeTab?.url || 'https://chatgpt.com';
-
-    // Log genuinely to backend
-    await logProctorViolation(
-      'ai_query_submitted',
-      assessment.policy.aiUsage === 'allowed' ? 'low' : 'critical',
-      assessment.policy.aiUsage === 'allowed' 
-        ? `AI prompt submitted to ${platform}: "${promptText}"`
-        : `Prohibited AI prompt attempted on ${platform}: "${promptText}"`,
-      0,
-      'electron_browser',
-      promptText,
-      activeUrl
-    );
-
-    addActivityEvent({
-      type: 'prompt_captured',
-      label: assessment.policy.aiUsage === 'allowed' ? 'AI Prompt Captured' : 'Prohibited AI Prompt Attempted',
-      details: `Prompt: "${promptText}" on ${platform}`,
-      severity: assessment.policy.aiUsage === 'allowed' ? 'low' : 'critical',
-      timestamp: new Date()
-    });
-
-    setTimeout(() => setPromptSubmitStatus(null), 4000);
   };
 
   const currentQuestion = questions[currentIdx];
@@ -896,33 +923,25 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
             );
           })}
 
-          {/* New Tab Button (where permitted by policy) */}
-          {(assessment.policy.externalResourceAccess === 'allowed' || assessment.policy.tabSwitchingPolicy === 'allowed') && (
-            <button
-              onClick={() => {
-                const newId = `tab-${Date.now()}`;
-                setBrowserTabs(prev => [...prev, {
-                  id: newId,
-                  title: 'New Page',
-                  url: 'https://',
-                  status: 'allowed'
-                }]);
-                setActiveTabId(newId);
-                setUrlInput('https://');
-              }}
-              className="p-1.5 text-black hover:bg-black hover:text-white border-2 border-black bg-white transition cursor-pointer shrink-0"
-              title="Open new navigation tab"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {/* If Tab switching is restricted by policy */}
-          {assessment.policy.tabSwitchingPolicy === 'restrict' && assessment.policy.aiUsage === 'prohibited' && (
-            <span className="text-[10px] text-[#c90000] font-bold uppercase tracking-wider bg-white px-2 py-1 border border-black shrink-0">
-              🔒 TABS RESTRICTED BY POLICY
-            </span>
-          )}
+          {/* New Tab Button (Opens Google Search) */}
+          <button
+            onClick={() => {
+              const newId = `tab-${Date.now()}`;
+              setBrowserTabs(prev => [...prev, {
+                id: newId,
+                title: 'Google Search',
+                url: 'https://www.google.com',
+                status: 'allowed'
+              }]);
+              setActiveTabId(newId);
+              setUrlInput('https://www.google.com');
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.10em] border-2 border-black bg-white hover:bg-black hover:text-white transition cursor-pointer shrink-0"
+            title="Open a new Google Search or web navigation tab"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>New Tab</span>
+          </button>
         </div>
 
         {/* Proctoring Activity Log Toggle Button */}
@@ -949,43 +968,28 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
         {/* Navigation Controls */}
         <div className="flex items-center gap-1">
           <button
-            onClick={() => {
-              if (historyIdx > 0) {
-                setHistoryIdx(prev => prev - 1);
-                handleNavigateUrl(browserHistory[historyIdx - 1]);
-              }
-            }}
-            disabled={historyIdx <= 0}
-            className="p-1.5 border-2 border-black text-black hover:bg-black hover:text-white disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-black transition cursor-pointer"
+            onClick={handleBack}
+            className="p-1.5 border-2 border-black text-black hover:bg-black hover:text-white transition cursor-pointer"
             title="Back"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={() => {
-              if (historyIdx < browserHistory.length - 1) {
-                setHistoryIdx(prev => prev + 1);
-                handleNavigateUrl(browserHistory[historyIdx + 1]);
-              }
-            }}
-            disabled={historyIdx >= browserHistory.length - 1}
-            className="p-1.5 border-2 border-black text-black hover:bg-black hover:text-white disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-black transition cursor-pointer"
+            onClick={handleForward}
+            className="p-1.5 border-2 border-black text-black hover:bg-black hover:text-white transition cursor-pointer"
             title="Forward"
           >
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={() => handleNavigateUrl(urlInput)}
+            onClick={handleReload}
             className="p-1.5 border-2 border-black text-black hover:bg-black hover:text-white transition cursor-pointer"
             title="Reload"
           >
             <RotateCw className={`w-3.5 h-3.5 ${isNavigating ? 'animate-spin' : ''}`} />
           </button>
           <button
-            onClick={() => {
-              setActiveTabId('tab-exam');
-              setUrlInput('wuelev8://examination-session');
-            }}
+            onClick={handleHome}
             className="p-1.5 border-2 border-black text-black hover:bg-black hover:text-white transition cursor-pointer"
             title="Home / Exam Paper"
           >
@@ -1012,7 +1016,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
             </span>
           ) : (
             <span className="flex items-center gap-1 text-[11px] font-bold text-neutral-700 uppercase tracking-wider shrink-0 mr-2">
-              <Globe className="w-3.5 h-3.5" /> Permitted Resource
+              <Globe className="w-3.5 h-3.5" /> Google / Web
             </span>
           )}
 
@@ -1021,16 +1025,16 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             disabled={activeTab.isExamTab}
-            placeholder="Enter web address..."
+            placeholder="Search Google or enter web URL (e.g. google.com, quicksort in python)..."
             className="flex-1 bg-transparent text-xs font-mono font-medium text-black focus:outline-none"
           />
 
           {!activeTab.isExamTab && (
             <button
               type="submit"
-              className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 bg-black text-white hover:bg-neutral-800 transition cursor-pointer"
+              className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 bg-black text-white hover:bg-neutral-800 transition cursor-pointer"
             >
-              Navigate
+              Search / Go
             </button>
           )}
         </form>
@@ -1352,93 +1356,51 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
             </div>
           </div>
         ) : (
-          /* PERMITTED WEB RESOURCE OR APPROVED AI WORKSPACE */
-          <div className="max-w-7xl mx-auto border-2 border-black bg-white flex flex-col h-[750px] overflow-hidden">
+          /* PERMITTED WEB RESOURCE OR GOOGLE / AI FULL-WIDTH BROWSER VIEW */
+          <div className="w-full border-2 border-black bg-white flex flex-col h-[calc(100vh-175px)] overflow-hidden">
             
-            {/* Top AI Monitoring Banner */}
-            {activeTab.isAiTab && (
-              <div className="bg-sky-50 border-b-2 border-black px-4 py-2.5 flex items-center justify-between text-xs text-sky-950">
-                <div className="flex items-center gap-2 font-mono font-bold uppercase tracking-wider">
-                  <Sparkles className="w-4 h-4 text-sky-600" />
-                  <span>AI Prompt Monitoring Active: All queries and prompts entered are captured for institutional evaluation</span>
-                </div>
-                <span className="text-[11px] font-mono bg-sky-200 px-2 py-0.5 border border-sky-400">
-                  POLICY: AI ALLOWED
+            {/* Top Browser Tab Info & Passive Monitoring Indicator */}
+            <div className="bg-[#f0f0f0] border-b-2 border-black px-4 py-1.5 flex items-center justify-between text-xs font-mono text-neutral-800 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Globe className="w-3.5 h-3.5 text-black shrink-0" />
+                <span className="truncate font-bold text-black max-w-xl">
+                  {activeTab.url}
                 </span>
               </div>
-            )}
-
-            {/* In-Browser Web Workspace & AI Prompt Capture Console */}
-            <div className="flex-1 flex flex-col md:flex-row divide-y-2 md:divide-y-0 md:divide-x-2 divide-black overflow-hidden">
-              
-              {/* Web Content Frame Viewport */}
-              <div className="flex-1 relative bg-neutral-100 flex flex-col">
-                <div className="p-3 bg-[#f0f0f0] border-b border-neutral-300 text-[11px] font-mono text-neutral-600 flex items-center justify-between">
-                  <span>SANDBOXED BROWSER VIEW: {activeTab.url}</span>
-                  <span>ISOLATION: SECURE WEBCONTENTS</span>
-                </div>
-                <div className="flex-1 w-full relative overflow-hidden bg-white">
-                  <iframe
-                    src={activeTab.url}
-                    title={activeTab.title}
-                    className="w-full h-full border-none"
-                    sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
-                  />
-                </div>
+              <div className="flex items-center gap-3 shrink-0">
+                {activeTab.isAiTab ? (
+                  <span className="bg-sky-100 text-sky-900 border border-sky-400 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-sky-600" /> AI Tool Active (Prompts Monitored)
+                  </span>
+                ) : (
+                  <span className="bg-emerald-50 text-emerald-900 border border-emerald-400 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Web Monitored
+                  </span>
+                )}
+                <span className="text-[11px] text-neutral-500 uppercase font-bold">
+                  Isolation: Sandboxed
+                </span>
               </div>
+            </div>
 
-              {/* Dedicated In-Exam AI Prompt Interceptor Console (Preserves USP) */}
-              <div className="w-full md:w-96 bg-white p-5 flex flex-col justify-between shrink-0">
-                <div>
-                  <div className="flex items-center gap-2 pb-3 border-b-2 border-black mb-4">
-                    <Terminal className="w-4 h-4 text-black" />
-                    <h4 className="font-extrabold text-xs uppercase tracking-[0.12em] text-black">
-                      AI Prompt Capture Console
-                    </h4>
-                  </div>
-
-                  <p className="text-xs text-neutral-700 leading-relaxed mb-4">
-                    Use this verified prompt console to interact with the AI assistant. Prompts entered here or inside the window are recorded for evaluation.
-                  </p>
-
-                  <form onSubmit={handleCandidatePromptSubmit} className="space-y-3">
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider font-mono text-neutral-600 mb-1">
-                        Candidate AI Prompt:
-                      </label>
-                      <textarea
-                        rows={4}
-                        value={candidatePromptInput}
-                        onChange={(e) => setCandidatePromptInput(e.target.value)}
-                        placeholder="Type prompt to send to AI assistant..."
-                        className="w-full p-3 border-2 border-black text-xs font-mono focus:outline-none bg-[#f0f0f0]"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={!candidatePromptInput.trim()}
-                      className="w-full py-2.5 bg-black hover:bg-neutral-800 disabled:opacity-40 text-white font-bold text-xs uppercase tracking-[0.12em] transition cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Submit & Log Prompt</span>
-                    </button>
-                  </form>
-
-                  {promptSubmitStatus && (
-                    <div className="mt-3 p-2.5 bg-emerald-50 border border-emerald-600 text-emerald-900 text-[11px] font-mono flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>{promptSubmitStatus}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-4 border-t-2 border-black mt-4 bg-[#f0f0f0] p-3 text-[10px] font-mono text-neutral-600">
-                  <p className="font-bold uppercase mb-1">USP Compliance Notice:</p>
-                  Prompts are captured without simulation. Logs are available in the Admin Proctoring Dashboard.
-                </div>
-              </div>
-
+            {/* Full-Width Browser Viewport */}
+            <div className="flex-1 w-full h-full relative bg-white overflow-hidden">
+              {window.electronAPI?.isElectron ? (
+                <webview
+                  ref={webviewRef}
+                  src={activeTab.url}
+                  className="w-full h-full border-none"
+                  partition="persist:exam_workspace"
+                  allowpopups={true}
+                />
+              ) : (
+                <iframe
+                  src={activeTab.url}
+                  title={activeTab.title}
+                  className="w-full h-full border-none"
+                  sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
+                />
+              )}
             </div>
 
           </div>

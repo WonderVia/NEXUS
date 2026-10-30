@@ -138,6 +138,12 @@ export interface AnalyticsSummary {
 
 // Window Electron API Declarations
 declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      webview: any;
+    }
+  }
+
   interface Window {
     electronAPI?: {
       isElectron: boolean;
