@@ -22,3 +22,4 @@ proc.on('error', (err) => {
   console.error('[Electron Launch Error]:', err);
   process.exit(1);
 });
+
