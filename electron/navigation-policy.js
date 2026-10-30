@@ -128,10 +128,10 @@ class NavigationPolicy {
       return { allowed: true, reason: 'outside_exam_session' };
     }
 
-    const isAI = this.isAiDomain(parsed.hostname);
+    const isAi = this.isAiDomain(parsed.hostname);
 
     // 4. AI-Specific Policy Check
-    if (isAI && this.aiUsage === 'prohibited') {
+    if (isAi && this.aiUsage === 'prohibited') {
       return {
         allowed: false,
         reason: 'prohibited_ai_tool',
@@ -158,7 +158,7 @@ class NavigationPolicy {
         allowed: true, 
         monitored: true, 
         isAi,
-        reason: isAI ? 'permitted_ai_tool' : 'permitted_external_domain',
+        reason: isAi ? 'permitted_ai_tool' : 'permitted_external_domain',
         domain: parsed.hostname
       };
     }
@@ -166,7 +166,7 @@ class NavigationPolicy {
     // 6. Blocked: External website during active exam
     return {
       allowed: false,
-      reason: isAI ? 'prohibited_ai_tool' : 'unauthorized_domain',
+      reason: isAi ? 'prohibited_ai_tool' : 'unauthorized_domain',
       isAi,
       message: `Access to ${parsed.hostname} is restricted by WUElev8 Exam Security Policy.`,
       url: targetUrl,
