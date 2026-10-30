@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Assessment, Attempt, ProctoringEvent, Question, User, AnalyticsSummary } from '../types';
 import { analyticsAPI, assessmentsAPI, questionsAPI, proctoringAPI, attemptsAPI } from '../services/api';
 import { 
@@ -6,8 +6,10 @@ import {
   XCircle, Clock, Search, Filter, RefreshCw, Plus, 
   Trash2, Eye, Check, Sliders, Bot,
   ArrowUpRight, ArrowDownLeft, Sparkles, Send, Globe,
-  Activity, ShieldCheck, ShieldX, Terminal, ExternalLink, AlertOctagon
+  Activity, ShieldCheck, ShieldX, Terminal, ExternalLink, AlertOctagon,
+  AlertTriangle, ChevronDown, ChevronUp, Award, HelpCircle, Layers, FileText
 } from 'lucide-react';
+import { evaluatePrompt, aggregatePromptAnalytics, PromptEvaluationResult } from '../utils/promptEvaluator';
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'analytics' | 'attempts' | 'events' | 'prompts' | 'assessments' | 'students'>('analytics');
@@ -32,6 +34,9 @@ export const AdminDashboard: React.FC = () => {
   const [eventFilterSource, setEventFilterSource] = useState('');
   const [eventFilterStatus, setEventFilterStatus] = useState('');
   const [promptSearchQuery, setPromptSearchQuery] = useState('');
+  const [promptQualityFilter, setPromptQualityFilter] = useState<'all' | 'exemplary' | 'good' | 'moderate' | 'poor' | 'direct_answer'>('all');
+  const [expandedPromptRubricId, setExpandedPromptRubricId] = useState<string | null>(null);
+  const [showJudgingGuideModal, setShowJudgingGuideModal] = useState(false);
 
   // Modals
   const [selectedAttemptAudit, setSelectedAttemptAudit] = useState<{
@@ -181,29 +186,57 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Filtered AI Prompts List (Preserves USP)
-  const aiPromptsList = allEvents.filter(ev => 
-    ev.eventType === 'ai_query_submitted' || 
-    ev.eventType === 'ai_response_received' ||
-    (ev.details && (
-      ev.details.toLowerCase().includes('prompt') || 
-      ev.details.toLowerCase().includes('chatgpt') || 
-      ev.details.toLowerCase().includes('claude') ||
-      ev.details.toLowerCase().includes('gemini') ||
-      ev.details.toLowerCase().includes('perplexity')
-    ))
-  );
+  // Filtered AI Prompts List with Evaluation & Judging Rubric
+  const evaluatedAiPrompts = useMemo(() => {
+    return allEvents
+      .filter(ev => 
+        ev.eventType === 'ai_query_submitted' || 
+        ev.eventType === 'ai_response_received' ||
+        (ev.details && (
+          ev.details.toLowerCase().includes('prompt') || 
+          ev.details.toLowerCase().includes('chatgpt') || 
+          ev.details.toLowerCase().includes('claude') ||
+          ev.details.toLowerCase().includes('gemini') ||
+          ev.details.toLowerCase().includes('perplexity')
+        ))
+      )
+      .map(ev => {
+        const analysis: PromptEvaluationResult = ev.promptAnalysis || evaluatePrompt(ev.details || '');
+        return {
+          ...ev,
+          promptAnalysis: analysis
+        };
+      });
+  }, [allEvents]);
 
-  const filteredAiPrompts = aiPromptsList.filter(ev => {
-    if (eventFilterAssessment && (ev as any).assessmentId !== eventFilterAssessment) return false;
-    if (promptSearchQuery) {
-      const q = promptSearchQuery.toLowerCase();
-      const matchText = (ev.details || '').toLowerCase();
-      const matchStudent = ((ev.studentName || '') + (ev.studentEmail || '')).toLowerCase();
-      return matchText.includes(q) || matchStudent.includes(q);
-    }
-    return true;
-  });
+  const promptAnalytics = useMemo(() => {
+    return aggregatePromptAnalytics(evaluatedAiPrompts);
+  }, [evaluatedAiPrompts]);
+
+  const filteredAiPrompts = useMemo(() => {
+    return evaluatedAiPrompts.filter(ev => {
+      if (eventFilterAssessment && (ev as any).assessmentId !== eventFilterAssessment) return false;
+
+      const analysis: PromptEvaluationResult = ev.promptAnalysis;
+      if (promptQualityFilter === 'exemplary' && analysis.tier !== 'EXEMPLARY') return false;
+      if (promptQualityFilter === 'good' && analysis.tier !== 'GOOD') return false;
+      if (promptQualityFilter === 'moderate' && analysis.tier !== 'MODERATE') return false;
+      if (promptQualityFilter === 'poor' && analysis.tier !== 'POOR_DIRECT_ANSWER' && analysis.tier !== 'LAZY_INPUT') return false;
+      if (promptQualityFilter === 'direct_answer' && !analysis.isDirectAnswerSeeking) return false;
+
+      if (promptSearchQuery) {
+        const q = promptSearchQuery.toLowerCase();
+        const matchText = (ev.details || '').toLowerCase();
+        const matchClean = (analysis.cleanPrompt || '').toLowerCase();
+        const matchStudent = ((ev.studentName || '') + (ev.studentEmail || '')).toLowerCase();
+        const matchVerdict = (analysis.verdict || '').toLowerCase();
+        const matchTechnique = (analysis.detectedTechniques || []).some((t: string) => t.toLowerCase().includes(q));
+        const matchAnti = (analysis.detectedAntiPatterns || []).some((t: string) => t.toLowerCase().includes(q));
+        return matchText.includes(q) || matchClean.includes(q) || matchStudent.includes(q) || matchVerdict.includes(q) || matchTechnique || matchAnti;
+      }
+      return true;
+    });
+  }, [evaluatedAiPrompts, eventFilterAssessment, promptQualityFilter, promptSearchQuery]);
 
   // Filtered Real-Time Proctoring & Security Events
   const filteredEvents = allEvents.filter(ev => {
@@ -318,7 +351,7 @@ export const AdminDashboard: React.FC = () => {
               : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
           }`}
         >
-          <Bot className="w-4 h-4" /> AI Prompt History ({aiPromptsList.length})
+          <Bot className="w-4 h-4" /> AI Prompt History & Quality ({evaluatedAiPrompts.length})
         </button>
 
         <button
@@ -767,25 +800,45 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* TAB: AI PROMPT HISTORY & INTERACTION AUDIT (USP PRESERVE) */}
+      {/* TAB: AI PROMPT HISTORY & INTERACTION AUDIT WITH QUALITY EVALUATION */}
       {activeTab === 'prompts' && (
         <div className="space-y-6">
-          {/* Header & Explanation */}
-          <div className="bg-[#f0f0f0] p-4 border-2 border-black flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Header & Controls */}
+          <div className="bg-[#f0f0f0] p-5 border-2 border-black flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h3 className="font-extrabold text-sm uppercase tracking-tight text-black flex items-center gap-2">
-                <Bot className="w-4 h-4 text-black" />
-                <span>Captured AI Prompt Records & Interactions</span>
-              </h3>
-              <p className="text-xs text-neutral-600 font-mono mt-0.5">
-                Authentic prompt submissions extracted from supported AI tools (ChatGPT, Claude, Gemini) during active sessions
+              <div className="flex items-center gap-2">
+                <Bot className="w-5 h-5 text-black" />
+                <h3 className="font-extrabold text-base uppercase tracking-tight text-black">
+                  AI Prompt Intelligence & Quality Evaluation Matrix
+                </h3>
+              </div>
+              <p className="text-xs text-neutral-600 font-mono mt-1">
+                Automated heuristic evaluation judging Good Prompts (Problem Decomposition & Prompt Engineering) vs Bad Prompts (Direct Answer Seeking & Lazy MCQ Copying)
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={() => setShowJudgingGuideModal(true)}
+                className="bg-black hover:bg-neutral-800 text-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2"
+              >
+                <HelpCircle className="w-3.5 h-3.5" /> Judging Rubric & Guide
+              </button>
+
+              <select
+                value={eventFilterAssessment}
+                onChange={(e) => setEventFilterAssessment(e.target.value)}
+                className="bg-white border-2 border-black px-3 py-1.5 text-xs text-black focus:outline-none"
+              >
+                <option value="">All Assessments</option>
+                {assessments.map(a => (
+                  <option key={a.id} value={a.id}>{a.title}</option>
+                ))}
+              </select>
+
               <input
                 type="text"
-                placeholder="Search prompt text or candidate..."
+                placeholder="Search prompt, technique, candidate..."
                 value={promptSearchQuery}
                 onChange={(e) => setPromptSearchQuery(e.target.value)}
                 className="bg-white border-2 border-black px-3 py-1.5 text-xs text-black placeholder-neutral-400 focus:outline-none w-64"
@@ -793,25 +846,192 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
+          {/* Prompt Analytics Ruled Matrix (4 KPI Cards) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 border-2 border-black bg-white divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-black">
+            {/* KPI 1: Average Quality Score */}
+            <div className="p-5 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-600 block mb-1">
+                  Average Prompt Quality
+                </span>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-extrabold text-black font-mono">
+                    {promptAnalytics.averageQualityScore}
+                  </span>
+                  <span className="text-sm font-bold text-neutral-500 font-mono">/ 100</span>
+                </div>
+              </div>
+              <div className="mt-3">
+                <span className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] border ${
+                  promptAnalytics.averageQualityScore >= 75 ? 'bg-emerald-600 text-white border-emerald-600' :
+                  promptAnalytics.averageQualityScore >= 55 ? 'bg-green-700 text-white border-green-700' :
+                  promptAnalytics.averageQualityScore >= 40 ? 'bg-amber-600 text-white border-amber-600' :
+                  'bg-[#c90000] text-white border-[#c90000]'
+                }`}>
+                  {promptAnalytics.averageQualityScore >= 75 ? 'Exemplary Engineering' :
+                   promptAnalytics.averageQualityScore >= 55 ? 'Competent Formulation' :
+                   promptAnalytics.averageQualityScore >= 40 ? 'Moderate Concept Inquiries' : 'Needs Significant Training'}
+                </span>
+                <p className="text-[10px] font-mono text-neutral-500 mt-1">Across {promptAnalytics.totalPromptsAnalyzed} total recorded submissions</p>
+              </div>
+            </div>
+
+            {/* KPI 2: Direct Answer Seeking (Cheating Flag) */}
+            <div className="p-5 flex flex-col justify-between bg-white">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-600 block mb-1">
+                  Direct Answer Seeking Rate
+                </span>
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-3xl font-extrabold font-mono ${promptAnalytics.directAnswerSeekingCount > 0 ? 'text-[#c90000]' : 'text-black'}`}>
+                    {promptAnalytics.directAnswerSeekingPercentage}%
+                  </span>
+                  <span className="text-xs font-bold text-neutral-500">
+                    ({promptAnalytics.directAnswerSeekingCount} of {promptAnalytics.totalPromptsAnalyzed})
+                  </span>
+                </div>
+              </div>
+              <div className="mt-3">
+                {promptAnalytics.directAnswerSeekingCount > 0 ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] bg-[#c90000] text-white">
+                    <AlertTriangle className="w-3 h-3" /> Cheat Pattern Detected
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] bg-black text-white">
+                    <Check className="w-3 h-3" /> Zero Answer Solicitation
+                  </span>
+                )}
+                <p className="text-[10px] font-mono text-neutral-500 mt-1">Direct exam option / solution queries</p>
+              </div>
+            </div>
+
+            {/* KPI 3: Quality Breakdown */}
+            <div className="p-5 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-600 block mb-2">
+                  Quality Tier Distribution
+                </span>
+                <div className="space-y-1.5 text-xs font-mono">
+                  <div className="flex items-center justify-between">
+                    <span className="text-emerald-700 font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-600"></span> Exemplary (80-100)
+                    </span>
+                    <span className="font-bold text-black">{promptAnalytics.qualityBreakdown.exemplary}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-green-700 font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-green-600"></span> Good (65-79)
+                    </span>
+                    <span className="font-bold text-black">{promptAnalytics.qualityBreakdown.good}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-amber-700 font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500"></span> Moderate (45-64)
+                    </span>
+                    <span className="font-bold text-black">{promptAnalytics.qualityBreakdown.moderate}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#c90000] font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#c90000]"></span> Bad / Direct Answer
+                    </span>
+                    <span className="font-bold text-black">{promptAnalytics.qualityBreakdown.poorDirectAnswer + promptAnalytics.qualityBreakdown.lazyInput}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* KPI 4: Top Prompting Techniques */}
+            <div className="p-5 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-600 block mb-2">
+                  Prompting Techniques Detected
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-[#f0f0f0] border border-black text-black">
+                    Role Persona: {promptAnalytics.techniqueFrequency['Role Assignment / Persona'] || 0}
+                  </span>
+                  <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-[#f0f0f0] border border-black text-black">
+                    Step-by-Step: {promptAnalytics.techniqueFrequency['Chain of Thought / Step-by-Step'] || 0}
+                  </span>
+                  <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-[#f0f0f0] border border-black text-black">
+                    Format Spec: {promptAnalytics.techniqueFrequency['Structured Format Specification'] || 0}
+                  </span>
+                  <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-[#f0f0f0] border border-black text-black">
+                    Anti-Cheat Boundary: {promptAnalytics.techniqueFrequency['Negative Boundary / Anti-Cheating Constraint'] || 0}
+                  </span>
+                </div>
+              </div>
+              <p className="text-[10px] font-mono text-neutral-500 mt-2">Active prompt design heuristics detected</p>
+            </div>
+          </div>
+
+          {/* Quick Filter Buttons */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <span className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-600 shrink-0">Filter By Quality:</span>
+            <button
+              onClick={() => setPromptQualityFilter('all')}
+              className={`px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer shrink-0 ${
+                promptQualityFilter === 'all' ? 'bg-black text-white' : 'bg-white text-black hover:bg-[#f0f0f0]'
+              }`}
+            >
+              All Prompts ({evaluatedAiPrompts.length})
+            </button>
+            <button
+              onClick={() => setPromptQualityFilter('exemplary')}
+              className={`px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer shrink-0 ${
+                promptQualityFilter === 'exemplary' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-emerald-800 hover:bg-emerald-50'
+              }`}
+            >
+              🌟 Exemplary ({promptAnalytics.qualityBreakdown.exemplary})
+            </button>
+            <button
+              onClick={() => setPromptQualityFilter('good')}
+              className={`px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer shrink-0 ${
+                promptQualityFilter === 'good' ? 'bg-green-700 text-white border-green-700' : 'bg-white text-green-800 hover:bg-green-50'
+              }`}
+            >
+              ✅ Good ({promptAnalytics.qualityBreakdown.good})
+            </button>
+            <button
+              onClick={() => setPromptQualityFilter('moderate')}
+              className={`px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer shrink-0 ${
+                promptQualityFilter === 'moderate' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-amber-800 hover:bg-amber-50'
+              }`}
+            >
+              💡 Moderate ({promptAnalytics.qualityBreakdown.moderate})
+            </button>
+            <button
+              onClick={() => setPromptQualityFilter('direct_answer')}
+              className={`px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] border-2 border-[#c90000] transition cursor-pointer shrink-0 ${
+                promptQualityFilter === 'direct_answer' ? 'bg-[#c90000] text-white' : 'bg-white text-[#c90000] hover:bg-red-50'
+              }`}
+            >
+              ⚠️ Direct Answer Seekers ({promptAnalytics.directAnswerSeekingCount})
+            </button>
+          </div>
+
           {/* Prompts Cards / Ruled Table */}
           <div className="border-2 border-black bg-white overflow-hidden divide-y-2 divide-black">
             {filteredAiPrompts.length === 0 ? (
               <div className="text-center py-16 text-black">
                 <Bot className="w-10 h-10 mx-auto mb-3 text-neutral-400" />
-                <p className="text-sm font-bold uppercase tracking-[0.12em]">No AI prompts recorded</p>
+                <p className="text-sm font-bold uppercase tracking-[0.12em]">No prompts match the selected criteria</p>
                 <p className="text-xs text-neutral-600 font-mono mt-1">
-                  Prompts captured during AI-allowed assessments will populate here
+                  Adjust your search or filter settings to view recorded AI interactions
                 </p>
               </div>
             ) : (
               filteredAiPrompts.map((promptEv) => {
                 const isViolation = promptEv.severity === 'critical' || promptEv.severity === 'high';
+                const analysis: PromptEvaluationResult = promptEv.promptAnalysis;
+                const isExpanded = expandedPromptRubricId === promptEv.id;
 
                 return (
-                  <div key={promptEv.id} className="p-5 hover:bg-[#f0f0f0] transition">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-neutral-300 mb-3">
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-xs uppercase tracking-tight text-black">
+                  <div key={promptEv.id} className="p-6 hover:bg-[#fafafa] transition">
+                    {/* Header Row: Candidate Info & Quality Badges */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b-2 border-neutral-200 mb-4">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="font-extrabold text-sm uppercase tracking-tight text-black">
                           {promptEv.studentName || 'Candidate'}
                         </span>
                         <span className="text-neutral-400 font-mono text-xs">•</span>
@@ -819,43 +1039,231 @@ export const AdminDashboard: React.FC = () => {
                           {promptEv.studentEmail}
                         </span>
                         <span className="text-neutral-400 font-mono text-xs">•</span>
-                        <span className="text-xs font-bold text-black uppercase">
+                        <span className="text-xs font-bold text-black uppercase bg-[#f0f0f0] px-2 py-0.5 border border-black">
                           {promptEv.assessmentTitle}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] border ${
-                          isViolation ? 'bg-[#c90000] text-white border-[#c90000]' : 'bg-black text-white border-black'
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Quality Tier Badge */}
+                        <span className={`px-2.5 py-1 text-xs font-extrabold uppercase tracking-[0.12em] border flex items-center gap-1.5 ${
+                          analysis.tier === 'EXEMPLARY' ? 'bg-emerald-600 text-white border-emerald-600' :
+                          analysis.tier === 'GOOD' ? 'bg-green-700 text-white border-green-700' :
+                          analysis.tier === 'MODERATE' ? 'bg-amber-600 text-white border-amber-600' :
+                          analysis.isDirectAnswerSeeking ? 'bg-[#c90000] text-white border-[#c90000] animate-pulse' :
+                          'bg-neutral-800 text-white border-neutral-800'
                         }`}>
-                          {isViolation ? 'Prohibited AI Usage' : 'AI Permitted (Monitored)'}
+                          {analysis.tier === 'EXEMPLARY' && <Sparkles className="w-3.5 h-3.5" />}
+                          {analysis.tier === 'GOOD' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                          {analysis.tier === 'MODERATE' && <HelpCircle className="w-3.5 h-3.5" />}
+                          {analysis.isDirectAnswerSeeking && <AlertTriangle className="w-3.5 h-3.5" />}
+                          {analysis.ratingLabel} • {analysis.qualityScore}/100
                         </span>
-                        <span className="text-[11px] font-mono text-neutral-500">
+
+                        <span className="text-xs font-mono text-neutral-500">
                           {new Date(promptEv.timestamp).toLocaleTimeString()}
                         </span>
                       </div>
                     </div>
 
-                    {/* Captured Prompt Box */}
-                    <div className="bg-[#f0f0f0] border-2 border-black p-4 my-2">
-                      <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 mb-1 flex items-center justify-between">
-                        <span>Extracted AI Query:</span>
-                        <span className="text-black bg-white px-2 py-0.5 border border-black">
-                          Source: {promptEv.detectionSource}
-                        </span>
+                    {/* Verdict Banner */}
+                    <div className={`p-3.5 border-2 mb-3 ${
+                      analysis.isDirectAnswerSeeking 
+                        ? 'bg-red-50 border-[#c90000] text-[#c90000]' :
+                      analysis.tier === 'EXEMPLARY'
+                        ? 'bg-emerald-50 border-emerald-600 text-emerald-950' :
+                      analysis.tier === 'GOOD'
+                        ? 'bg-green-50 border-green-600 text-green-950' :
+                      analysis.tier === 'MODERATE'
+                        ? 'bg-amber-50 border-amber-500 text-amber-950' :
+                        'bg-[#f0f0f0] border-black text-black'
+                    }`}>
+                      <div className="flex items-start gap-2.5">
+                        {analysis.isDirectAnswerSeeking ? (
+                          <AlertTriangle className="w-4 h-4 text-[#c90000] shrink-0 mt-0.5" />
+                        ) : analysis.tier === 'EXEMPLARY' ? (
+                          <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <Bot className="w-4 h-4 text-black shrink-0 mt-0.5" />
+                        )}
+                        <div>
+                          <span className="font-extrabold text-xs uppercase tracking-tight block">
+                            Institutional Verdict: {analysis.verdict}
+                          </span>
+                          <p className="text-[11px] font-mono mt-0.5 leading-relaxed opacity-90">
+                            {analysis.summaryReason}
+                          </p>
+                        </div>
                       </div>
-                      <blockquote className="text-xs font-mono font-bold text-black leading-relaxed whitespace-pre-wrap">
-                        {promptEv.details}
+                    </div>
+
+                    {/* Clean Extracted Prompt Box */}
+                    <div className="bg-[#f0f0f0] border-2 border-black p-4 my-2">
+                      <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 mb-1.5 flex items-center justify-between">
+                        <span>Extracted Candidate Prompt:</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-black bg-white px-2 py-0.5 border border-black">
+                            Source: {promptEv.detectionSource}
+                          </span>
+                          <span className="text-black bg-white px-2 py-0.5 border border-black font-mono">
+                            {analysis.cleanPrompt.length} chars • {analysis.cleanPrompt.split(/\s+/).filter(Boolean).length} words
+                          </span>
+                        </div>
+                      </div>
+                      <blockquote className="text-xs font-mono font-bold text-black leading-relaxed whitespace-pre-wrap bg-white p-3 border border-neutral-300">
+                        {analysis.cleanPrompt || promptEv.details}
                       </blockquote>
                     </div>
 
-                    <div className="flex items-center justify-between text-[11px] font-mono text-neutral-600 pt-2">
-                      <span>Event ID: {promptEv.id}</span>
+                    {/* Techniques & Anti-Patterns Pills */}
+                    <div className="flex items-center gap-2 flex-wrap my-2.5">
+                      {/* Positive Techniques */}
+                      {analysis.detectedTechniques.map((tech, idx) => (
+                        <span key={idx} className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] bg-emerald-100 text-emerald-900 border border-emerald-400">
+                          + {tech}
+                        </span>
+                      ))}
+
+                      {/* Negative Anti-Patterns */}
+                      {analysis.detectedAntiPatterns.map((anti, idx) => (
+                        <span key={idx} className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] bg-red-100 text-[#c90000] border border-red-300 font-extrabold">
+                          - {anti}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Expandable Rubric Scorecard Drawer */}
+                    {isExpanded && (
+                      <div className="mt-4 p-4 border-2 border-black bg-white space-y-4">
+                        <div className="flex items-center justify-between border-b-2 border-black pb-2">
+                          <h4 className="font-extrabold text-xs uppercase tracking-[0.12em] text-black flex items-center gap-2">
+                            <Sliders className="w-3.5 h-3.5" />
+                            Judging Rubric Breakdown & Scorecard
+                          </h4>
+                          <span className="text-xs font-mono font-bold text-black">
+                            Composite Score: {analysis.qualityScore} / 100
+                          </span>
+                        </div>
+
+                        {/* 4 Dimension Progress Matrix */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.12em] mb-1">
+                              <span>1. Critical Thinking vs Answer Seeking</span>
+                              <span className="font-mono">{analysis.criteriaScores.criticalThinkingVsAnswerSeeking} / 30</span>
+                            </div>
+                            <div className="w-full bg-[#f0f0f0] h-2.5 border border-black overflow-hidden">
+                              <div
+                                className={`h-full ${analysis.isDirectAnswerSeeking ? 'bg-[#c90000]' : 'bg-black'}`}
+                                style={{ width: `${(analysis.criteriaScores.criticalThinkingVsAnswerSeeking / 30) * 100}%` }}
+                              />
+                            </div>
+                            <p className="text-[10px] font-mono text-neutral-600 mt-0.5">Penalized heavily for direct MCQ option solicitation.</p>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.12em] mb-1">
+                              <span>2. Context & Problem Framing</span>
+                              <span className="font-mono">{analysis.criteriaScores.contextAndFraming} / 25</span>
+                            </div>
+                            <div className="w-full bg-[#f0f0f0] h-2.5 border border-black overflow-hidden">
+                              <div
+                                className="h-full bg-black"
+                                style={{ width: `${(analysis.criteriaScores.contextAndFraming / 25) * 100}%` }}
+                              />
+                            </div>
+                            <p className="text-[10px] font-mono text-neutral-600 mt-0.5">Substantive depth, background, technical CS vocabulary.</p>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.12em] mb-1">
+                              <span>3. Prompt Engineering Techniques</span>
+                              <span className="font-mono">{analysis.criteriaScores.promptEngineeringTechniques} / 25</span>
+                            </div>
+                            <div className="w-full bg-[#f0f0f0] h-2.5 border border-black overflow-hidden">
+                              <div
+                                className="h-full bg-black"
+                                style={{ width: `${(analysis.criteriaScores.promptEngineeringTechniques / 25) * 100}%` }}
+                              />
+                            </div>
+                            <p className="text-[10px] font-mono text-neutral-600 mt-0.5">Role persona, Chain-of-Thought, step-by-step reasoning.</p>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.12em] mb-1">
+                              <span>4. Constraint Specification & Format</span>
+                              <span className="font-mono">{analysis.criteriaScores.constraintSpecification} / 20</span>
+                            </div>
+                            <div className="w-full bg-[#f0f0f0] h-2.5 border border-black overflow-hidden">
+                              <div
+                                className="h-full bg-black"
+                                style={{ width: `${(analysis.criteriaScores.constraintSpecification / 20) * 100}%` }}
+                              />
+                            </div>
+                            <p className="text-[10px] font-mono text-neutral-600 mt-0.5">Output structuring (table, markdown, anti-cheating bounds).</p>
+                          </div>
+                        </div>
+
+                        {/* Strengths & Weaknesses */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-neutral-200">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800 block mb-1">
+                              Identified Strengths:
+                            </span>
+                            {analysis.strengths.length === 0 ? (
+                              <p className="text-[11px] font-mono text-neutral-500">None detected</p>
+                            ) : (
+                              <ul className="text-[11px] font-mono text-neutral-700 list-disc list-inside space-y-0.5">
+                                {analysis.strengths.map((s, idx) => (
+                                  <li key={idx}>{s}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#c90000] block mb-1">
+                              Identified Weaknesses / Anti-Patterns:
+                            </span>
+                            {analysis.weaknesses.length === 0 ? (
+                              <p className="text-[11px] font-mono text-neutral-500">None detected</p>
+                            ) : (
+                              <ul className="text-[11px] font-mono text-neutral-700 list-disc list-inside space-y-0.5">
+                                {analysis.weaknesses.map((w, idx) => (
+                                  <li key={idx} className="text-[#c90000] font-bold">{w}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Recommendation */}
+                        <div className="bg-[#f0f0f0] p-3 border border-black text-xs font-mono">
+                          <span className="font-bold text-black uppercase">Institutional Evaluator Recommendation: </span>
+                          <span className="text-neutral-800">{analysis.recommendation}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Footer Row: Event ID & Actions */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] font-mono text-neutral-600 pt-3 border-t border-neutral-200 gap-2">
+                      <div className="flex items-center gap-3">
+                        <span>Event ID: {promptEv.id}</span>
+                        <span>•</span>
+                        <button
+                          onClick={() => setExpandedPromptRubricId(isExpanded ? null : promptEv.id)}
+                          className="font-bold text-black hover:underline cursor-pointer flex items-center gap-1 uppercase"
+                        >
+                          {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          {isExpanded ? 'Hide Rubric Scorecard' : 'View Rubric Scorecard'}
+                        </button>
+                      </div>
+
                       <div className="flex items-center gap-2">
                         <span>Review: {promptEv.reviewStatus}</span>
                         <button
                           onClick={() => handleReviewEvent(promptEv.id, 'reviewed')}
-                          className="px-2 py-0.5 bg-black text-white hover:bg-neutral-800 text-[10px] font-bold uppercase cursor-pointer"
+                          className="px-2.5 py-1 bg-black text-white hover:bg-neutral-800 text-[10px] font-bold uppercase tracking-[0.12em] cursor-pointer"
                         >
                           Mark Evaluated
                         </button>
@@ -1051,6 +1459,43 @@ export const AdminDashboard: React.FC = () => {
               </span>
             </div>
 
+            {/* Candidate AI Prompting Profile (if prompts recorded in this attempt) */}
+            {(() => {
+              const attemptPrompts = selectedAttemptAudit.events.filter(e => 
+                e.eventType === 'ai_query_submitted' || 
+                (e.details && (e.details.toLowerCase().includes('prompt') || e.details.toLowerCase().includes('chatgpt') || e.details.toLowerCase().includes('claude')))
+              );
+              if (attemptPrompts.length === 0) return null;
+              const aggregate = aggregatePromptAnalytics(attemptPrompts);
+              const persona = Object.values(aggregate.candidatePersonas)[0]?.persona || 'Mixed Explorer';
+              return (
+                <div className="p-3 my-2 border-2 border-black bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <Bot className="w-5 h-5 text-black shrink-0" />
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-extrabold uppercase tracking-tight text-black">Candidate AI Prompting Profile:</span>
+                        <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] border ${
+                          persona === 'Strategic Prompt Engineer' ? 'bg-emerald-600 text-white border-emerald-600' :
+                          persona === 'Thoughtful Inquirer' ? 'bg-green-700 text-white border-green-700' :
+                          persona.includes('Cheating') ? 'bg-[#c90000] text-white border-[#c90000]' :
+                          'bg-amber-600 text-white border-amber-600'
+                        }`}>
+                          {persona}
+                        </span>
+                      </div>
+                      <p className="text-[10px] font-mono text-neutral-600 mt-0.5">
+                        Avg Quality Score: <strong className="text-black">{aggregate.averageQualityScore}/100</strong> • Direct Answer Requests: <strong className={aggregate.directAnswerSeekingCount > 0 ? "text-[#c90000]" : "text-black"}>{aggregate.directAnswerSeekingCount} of {aggregate.totalPromptsAnalyzed}</strong>
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold text-neutral-500 uppercase bg-[#f0f0f0] px-2 py-1 border border-black">
+                    Institutional Rubric Assessed
+                  </span>
+                </div>
+              );
+            })()}
+
             {/* Timeline Stream */}
             <div className="flex-1 overflow-y-auto py-2 space-y-2.5 divide-y-2 divide-black">
               {selectedAttemptAudit.events.length === 0 ? (
@@ -1138,6 +1583,54 @@ export const AdminDashboard: React.FC = () => {
                           <div className="text-xs font-medium text-black leading-relaxed mt-1">
                             {ev.details}
                           </div>
+
+                          {/* Evaluated Prompt Details Card if AI Query */}
+                          {isAIQuery && (() => {
+                            const evalResult = ev.promptAnalysis || evaluatePrompt(ev.details || '');
+                            return (
+                              <div className={`mt-2 p-3 border-2 text-xs font-mono ${
+                                evalResult.isDirectAnswerSeeking ? 'bg-red-50 border-[#c90000]' :
+                                evalResult.tier === 'EXEMPLARY' ? 'bg-emerald-50 border-emerald-600' :
+                                evalResult.tier === 'GOOD' ? 'bg-green-50 border-green-600' :
+                                'bg-[#f0f0f0] border-black'
+                              }`}>
+                                <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                                  <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-white ${
+                                    evalResult.isDirectAnswerSeeking ? 'bg-[#c90000]' :
+                                    evalResult.tier === 'EXEMPLARY' ? 'bg-emerald-600' :
+                                    evalResult.tier === 'GOOD' ? 'bg-green-700' :
+                                    evalResult.tier === 'MODERATE' ? 'bg-amber-600' : 'bg-black'
+                                  }`}>
+                                    {evalResult.ratingLabel} • {evalResult.qualityScore}/100
+                                  </span>
+                                  <span className="text-[10px] font-bold text-neutral-600 uppercase">
+                                    {evalResult.isDirectAnswerSeeking ? '⚠️ Answer Seeking Solicitation' : 'Structured Prompt Engineering'}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] font-bold text-neutral-900 leading-snug">
+                                  Verdict: {evalResult.verdict}
+                                </p>
+                                {evalResult.detectedTechniques.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                    {evalResult.detectedTechniques.map((t: string, i: number) => (
+                                      <span key={i} className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 bg-white border border-emerald-300 text-emerald-800">
+                                        + {t}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {evalResult.detectedAntiPatterns.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {evalResult.detectedAntiPatterns.map((a: string, i: number) => (
+                                      <span key={i} className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 bg-white border border-red-300 text-[#c90000]">
+                                        - {a}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {ev.duration > 0 && (
                             <div className="text-[10px] text-neutral-600 font-mono">
@@ -1897,6 +2390,185 @@ export const AdminDashboard: React.FC = () => {
                 className="flex-1 py-3 bg-black hover:bg-neutral-800 text-white border-2 border-black font-bold uppercase tracking-[0.12em] text-xs transition cursor-pointer"
               >
                 Save & Enforce Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: AI Prompt Judging Rubric & Guide */}
+      {showJudgingGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-4xl bg-white border-2 border-black p-6 sm:p-8 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b-2 border-black">
+              <div className="flex items-center gap-2">
+                <Award className="w-5 h-5 text-black" />
+                <h3 className="font-extrabold text-base uppercase tracking-tight text-black">
+                  WUElev8 AI Prompt Evaluation Matrix & Judging Criteria
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowJudgingGuideModal(false)}
+                className="p-1 hover:bg-[#f0f0f0] border border-black cursor-pointer font-bold text-xs"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-6">
+              {/* Introduction */}
+              <div className="bg-[#f0f0f0] p-4 border-2 border-black">
+                <h4 className="font-extrabold text-xs uppercase tracking-[0.12em] text-black mb-1">
+                  How WUElev8 Distinguishes "Good Prompts" vs "Bad Prompts"
+                </h4>
+                <p className="text-xs font-mono text-neutral-700 leading-relaxed">
+                  In assessments where AI assistance is permitted, candidates must demonstrate authentic intellectual competence through **Problem Decomposition** and **Prompt Engineering**, rather than treating the AI as an unassisted cheat sheet.
+                </p>
+              </div>
+
+              {/* 4 Judging Dimensions */}
+              <div>
+                <h4 className="font-extrabold text-xs uppercase tracking-[0.12em] text-black mb-3 flex items-center gap-2">
+                  <Sliders className="w-4 h-4" />
+                  The 4 Core Evaluation Dimensions (100 Point Rubric)
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border-2 border-black p-4 bg-white">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-bold text-xs uppercase tracking-tight text-black">1. Critical Thinking vs Answer Seeking</span>
+                      <span className="text-xs font-mono font-bold bg-black text-white px-2 py-0.5">30 Pts</span>
+                    </div>
+                    <p className="text-xs text-neutral-600 font-mono mb-2">
+                      Evaluates whether the candidate explores concepts/mechanisms vs seeking raw answers.
+                    </p>
+                    <ul className="text-[11px] font-mono space-y-1">
+                      <li className="text-emerald-800 font-bold">+ High Score: Explores why an approach fails, asks for theoretical derivations.</li>
+                      <li className="text-[#c90000] font-bold">- Heavy Penalty: Asks "What is the answer", "Which option (A/B/C/D) is right", or pastes raw MCQs.</li>
+                    </ul>
+                  </div>
+
+                  <div className="border-2 border-black p-4 bg-white">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-bold text-xs uppercase tracking-tight text-black">2. Context & Problem Framing</span>
+                      <span className="text-xs font-mono font-bold bg-black text-white px-2 py-0.5">25 Pts</span>
+                    </div>
+                    <p className="text-xs text-neutral-600 font-mono mb-2">
+                      Evaluates depth, technical vocabulary, and clarity of the input scenario.
+                    </p>
+                    <ul className="text-[11px] font-mono space-y-1">
+                      <li className="text-emerald-800 font-bold">+ High Score: Detailed background, precise CS domain vocabulary, specific constraints.</li>
+                      <li className="text-[#c90000] font-bold">- Heavy Penalty: Single words ("hi", "ans pls"), vague prompts with &lt;15 characters.</li>
+                    </ul>
+                  </div>
+
+                  <div className="border-2 border-black p-4 bg-white">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-bold text-xs uppercase tracking-tight text-black">3. Prompt Engineering Techniques</span>
+                      <span className="text-xs font-mono font-bold bg-black text-white px-2 py-0.5">25 Pts</span>
+                    </div>
+                    <p className="text-xs text-neutral-600 font-mono mb-2">
+                      Detects advanced heuristics used by proficient prompt engineers.
+                    </p>
+                    <ul className="text-[11px] font-mono space-y-1">
+                      <li className="text-emerald-800 font-bold">+ Role Prompting: "Act as a Senior Database Architect..."</li>
+                      <li className="text-emerald-800 font-bold">+ Chain-of-Thought: "Explain step-by-step before concluding..."</li>
+                      <li className="text-emerald-800 font-bold">+ Anti-Cheating Boundary: "Do not give direct answer, guide me..."</li>
+                    </ul>
+                  </div>
+
+                  <div className="border-2 border-black p-4 bg-white">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-bold text-xs uppercase tracking-tight text-black">4. Constraint Specification & Format</span>
+                      <span className="text-xs font-mono font-bold bg-black text-white px-2 py-0.5">20 Pts</span>
+                    </div>
+                    <p className="text-xs text-neutral-600 font-mono mb-2">
+                      Evaluates if the candidate enforces structured output formats and bounds.
+                    </p>
+                    <ul className="text-[11px] font-mono space-y-1">
+                      <li className="text-emerald-800 font-bold">+ Format constraints: Markdown tables, bulleted lists, JSON, pseudocode.</li>
+                      <li className="text-emerald-800 font-bold">+ Complexity boundaries: "O(1) space complexity", "edge cases".</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Side-by-Side Comparison: Good Prompt vs Bad Prompt */}
+              <div>
+                <h4 className="font-extrabold text-xs uppercase tracking-[0.12em] text-black mb-3 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Side-by-Side Comparison: Good Prompt vs Bad Prompt
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Bad Prompt Card */}
+                  <div className="border-2 border-[#c90000] p-4 bg-red-50/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-extrabold uppercase tracking-tight text-[#c90000] flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4" /> ⚠️ Bad Prompt (Direct Answer Seeking)
+                      </span>
+                      <span className="text-xs font-bold font-mono bg-[#c90000] text-white px-2 py-0.5">
+                        Score: 18 / 100
+                      </span>
+                    </div>
+                    <blockquote className="text-xs font-mono p-3 bg-white border border-red-300 text-black mb-2 whitespace-pre-wrap">
+                      "Which option is correct for question 3: (A) Semaphore (B) Mutex (C) Monitor (D) Spinlock? Give me the answer."
+                    </blockquote>
+                    <p className="text-[11px] font-mono text-[#c90000]">
+                      <strong>Why it failed:</strong> Solicits direct exam option letters without intellectual inquiry. Raw MCQ copy-pasting detected. Flagged as cheating.
+                    </p>
+                  </div>
+
+                  {/* Good Prompt Card */}
+                  <div className="border-2 border-emerald-600 p-4 bg-emerald-50/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-extrabold uppercase tracking-tight text-emerald-900 flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-emerald-600" /> 🌟 Good Prompt (Exemplary Engineering)
+                      </span>
+                      <span className="text-xs font-bold font-mono bg-emerald-600 text-white px-2 py-0.5">
+                        Score: 94 / 100
+                      </span>
+                    </div>
+                    <blockquote className="text-xs font-mono p-3 bg-white border border-emerald-300 text-black mb-2 whitespace-pre-wrap">
+                      "Act as a Senior Systems Architect. In a multithreaded queue, why can calling signal() before updating shared state trigger race conditions? Explain the mechanism step-by-step in a markdown table. Do not reveal direct exam answers."
+                    </blockquote>
+                    <p className="text-[11px] font-mono text-emerald-900">
+                      <strong>Why it succeeded:</strong> Clear role definition, explicit step-by-step reasoning constraint, markdown table format, and negative anti-cheating boundary.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Score Tiers */}
+              <div className="border-2 border-black p-4 bg-white">
+                <h4 className="font-extrabold text-xs uppercase tracking-[0.12em] text-black mb-2">
+                  Institutional Scoring Tiers
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                  <div className="p-2 border border-emerald-500 bg-emerald-50">
+                    <strong className="text-emerald-900 block font-bold">80 - 100: Exemplary</strong>
+                    <span className="text-[10px] text-emerald-700">Top prompt engineering marks</span>
+                  </div>
+                  <div className="p-2 border border-green-500 bg-green-50">
+                    <strong className="text-green-900 block font-bold">65 - 79: Good Quality</strong>
+                    <span className="text-[10px] text-green-700">Strong decomposition</span>
+                  </div>
+                  <div className="p-2 border border-amber-500 bg-amber-50">
+                    <strong className="text-amber-900 block font-bold">45 - 64: Moderate</strong>
+                    <span className="text-[10px] text-amber-700">Basic conceptual query</span>
+                  </div>
+                  <div className="p-2 border border-red-500 bg-red-50">
+                    <strong className="text-[#c90000] block font-bold">&lt; 45: Direct Answer</strong>
+                    <span className="text-[10px] text-red-700">Flagged cheating pattern</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t-2 border-black text-right mt-2">
+              <button
+                onClick={() => setShowJudgingGuideModal(false)}
+                className="px-5 py-2.5 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] transition cursor-pointer"
+              >
+                Close Judging Guide
               </button>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { db } from '../db/schema.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
+import { evaluatePrompt, aggregatePromptAnalytics } from '../services/promptEvaluator.js';
 
 export function getAdminAnalytics(req: AuthenticatedRequest, res: Response) {
   try {
@@ -229,10 +230,70 @@ export function getAllProctoringEvents(req: AuthenticatedRequest, res: Response)
 
     query += ' ORDER BY pe.timestamp DESC LIMIT 300';
 
-    const events = db.prepare(query).all(...params);
+    const rawEvents: any[] = db.prepare(query).all(...params);
+    const events = rawEvents.map(e => {
+      const isAiEvent = e.eventType === 'ai_query_submitted' || 
+                        e.eventType === 'ai_response_received' || 
+                        (e.details && (e.details.toLowerCase().includes('prompt') || 
+                                       e.details.toLowerCase().includes('chatgpt') || 
+                                       e.details.toLowerCase().includes('claude') || 
+                                       e.details.toLowerCase().includes('gemini')));
+      if (isAiEvent) {
+        return {
+          ...e,
+          promptAnalysis: evaluatePrompt(e.details || '')
+        };
+      }
+      return e;
+    });
+
     return res.json({ events });
   } catch (err: any) {
     console.error('Get all events error:', err);
     return res.status(500).json({ error: 'Failed to retrieve proctoring events' });
+  }
+}
+
+export function getPromptEvaluationSummary(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { assessmentId } = req.query;
+    let query = `
+      SELECT pe.*, 
+             u.name as studentName, 
+             u.email as studentEmail, 
+             a.title as assessmentTitle,
+             a.id as assessmentId
+      FROM proctoring_events pe
+      JOIN attempts att ON att.id = pe.attemptId
+      JOIN users u ON u.id = att.studentId
+      JOIN assessments a ON a.id = att.assessmentId
+      WHERE (pe.eventType IN ('ai_query_submitted', 'ai_response_received') 
+         OR pe.details LIKE '%AI prompt%' 
+         OR pe.details LIKE '%ChatGPT%' 
+         OR pe.details LIKE '%Claude%' 
+         OR pe.details LIKE '%Gemini%')
+    `;
+    const params: any[] = [];
+    if (assessmentId) {
+      query += ' AND a.id = ?';
+      params.push(assessmentId);
+    }
+    query += ' ORDER BY pe.timestamp DESC';
+    const rawEvents: any[] = db.prepare(query).all(...params);
+
+    const eventsWithAnalysis = rawEvents.map(e => ({
+      ...e,
+      promptAnalysis: evaluatePrompt(e.details || '')
+    }));
+
+    const summary = aggregatePromptAnalytics(rawEvents);
+
+    return res.json({
+      summary,
+      events: eventsWithAnalysis
+    });
+  } catch (err: any) {
+    console.error('Prompt evaluation summary error:', err);
+    return res.status(500).json({ error: 'Failed to retrieve prompt analytics' });
   }
 }

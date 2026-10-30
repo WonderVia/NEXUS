@@ -164,6 +164,7 @@ export interface ProctoringEvent {
   studentName?: string;
   studentEmail?: string;
   assessmentTitle?: string;
+  promptAnalysis?: any;
 }
 
 export interface AnalyticsSummary {

@@ -4,7 +4,7 @@ import { listAssessments, getAssessmentById, createAssessment, updateAssessment 
 import { getQuestionsByAssessment, createQuestion, updateQuestion, deleteQuestion } from './controllers/questions.js';
 import { startAttempt, getAttemptById, saveAnswer, submitAttempt, getOfflinePackage, syncAttemptBatch, getAttemptSyncStatus } from './controllers/attempts.js';
 import { logProctoringEvent, getAttemptEvents, reviewProctoringEvent, getActiveProctorSession, logExtensionEvent } from './controllers/proctoring.js';
-import { getAdminAnalytics, getAllAttempts, exportDataCsv, getAllProctoringEvents } from './controllers/analytics.js';
+import { getAdminAnalytics, getAllAttempts, exportDataCsv, getAllProctoringEvents, getPromptEvaluationSummary } from './controllers/analytics.js';
 import { authenticate, requireRole } from './middleware/auth.js';
 
 const router = Router();
@@ -52,6 +52,7 @@ router.post('/proctor/extension-event', logExtensionEvent);
 router.get('/admin/analytics', authenticate, requireRole(['admin']), getAdminAnalytics);
 router.get('/admin/attempts', authenticate, requireRole(['admin']), getAllAttempts);
 router.get('/admin/events', authenticate, requireRole(['admin']), getAllProctoringEvents);
+router.get('/admin/prompt-analytics', authenticate, requireRole(['admin']), getPromptEvaluationSummary);
 router.get('/admin/export', authenticate, requireRole(['admin']), exportDataCsv);
 router.get('/admin/students', authenticate, requireRole(['admin']), getAllStudents);
 

@@ -301,6 +301,11 @@ export const analyticsAPI = {
     return request<{ events: ProctoringEvent[] }>(`/admin/events${query ? `?${query}` : ''}`);
   },
 
+  getPromptAnalytics: (assessmentId?: string) => {
+    const query = assessmentId ? `?assessmentId=${encodeURIComponent(assessmentId)}` : '';
+    return request<{ summary: any; events: ProctoringEvent[] }>(`/admin/prompt-analytics${query}`);
+  },
+
   getStudents: () => request<{ students: User[] }>('/admin/students'),
 
   getExportUrl: (type: 'results' | 'events', assessmentId?: string) => {
