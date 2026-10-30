@@ -318,8 +318,9 @@ class OfflineSyncManager {
     this.isSyncing = true;
     this.updateState({ syncStatus: 'syncing', errorMessage: null });
 
+    let payload: any = null;
     try {
-      const payload = await window.electronAPI.offline.getPendingSyncPayload(this.attemptId);
+      payload = await window.electronAPI.offline.getPendingSyncPayload(this.attemptId);
       if (!payload) {
         this.updateState({ syncStatus: 'synced', pendingCount: 0 });
         this.isSyncing = false;
@@ -381,6 +382,44 @@ class OfflineSyncManager {
       console.warn('[OfflineSyncManager] Sync failed:', err.message);
 
       const isConflict = err.message?.includes('finalized') || err.message?.includes('expired');
+
+      // If attempt is already finalized on server, retrieve authoritative finalized state and complete sync
+      if (isConflict && this.attemptId) {
+        try {
+          const syncStatus = await attemptsAPI.getSyncStatus(this.attemptId);
+          if (syncStatus && syncStatus.isFinalized) {
+            if (window.electronAPI?.offline?.setSubmissionState) {
+              await window.electronAPI.offline.setSubmissionState(this.attemptId, 'submitted');
+            }
+            if (window.electronAPI?.offline?.acknowledgeSync) {
+              await window.electronAPI.offline.acknowledgeSync(this.attemptId, {
+                acceptedAnswerIds: (payload?.answers || []).map((a: any) => a.questionId),
+                acceptedEventIds: (payload?.proctoringEvents || []).map((e: any) => e.id || e.eventId),
+                acceptedAnswerChangeIds: (payload?.answerChanges || []).map((c: any) => c.eventId),
+                finalized: true
+              });
+            }
+            this.updateState({
+              syncStatus: 'synced',
+              submissionState: 'submitted',
+              pendingCount: 0,
+              errorMessage: null
+            });
+            this.isSyncing = false;
+            return {
+              ok: true,
+              isFinalized: true,
+              status: syncStatus.status,
+              score: syncStatus.score,
+              percentage: syncStatus.percentage,
+              syncTimestamp: new Date().toISOString()
+            };
+          }
+        } catch (fetchErr) {
+          console.warn('[OfflineSyncManager] Failed resolving finalized sync status:', fetchErr);
+        }
+      }
+
       const newStatus = isConflict ? 'conflict' : 'failed';
 
       this.updateState({
@@ -415,3 +454,4 @@ class OfflineSyncManager {
 }
 
 export const offlineSyncManager = new OfflineSyncManager();
+

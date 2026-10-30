@@ -220,8 +220,17 @@ export function submitAttempt(req: AuthenticatedRequest, res: Response) {
       return res.status(403).json({ error: 'Unauthorized submission' });
     }
 
-    if (attempt.status === 'submitted') {
-      return res.status(400).json({ error: 'Assessment has already been submitted' });
+    if (attempt.status === 'submitted' || attempt.status === 'flagged') {
+      return res.json({
+        message: `Assessment has already been finalized (${attempt.status})`,
+        status: attempt.status,
+        score: attempt.score,
+        totalPossibleScore: attempt.totalPossibleScore,
+        percentage: attempt.percentage,
+        correctCount: 0,
+        totalQuestions: 0,
+        submittedAt: attempt.submittedAt
+      });
     }
 
     return internalScoreAttempt(attemptId as string, 'submitted', res);
@@ -428,6 +437,35 @@ export function syncAttemptBatch(req: AuthenticatedRequest, res: Response) {
     // Explicit conflict handling:
     // If the attempt has already been finalized or revoked on the server, reject conflicting submissions
     if (attempt.status === 'submitted' || attempt.status === 'flagged') {
+      const isSubmitting =
+        submission?.isFinalSubmission ||
+        submissionState?.state === 'pending_sync' ||
+        submissionState?.state === 'submitted' ||
+        clientReportedStatus === 'submitted';
+
+      if (isSubmitting) {
+        const nowIso = new Date().toISOString();
+        return res.json({
+          ok: true,
+          success: true,
+          attemptId,
+          acceptedAnswerIds: [],
+          acceptedEventIds: [],
+          acceptedAnswerChangeIds: [],
+          status: attempt.status,
+          attemptStatus: attempt.status,
+          clientReportedStatus: 'submitted',
+          serverTimestamp: nowIso,
+          syncedAt: nowIso,
+          syncTimestamp: nowIso,
+          isFinalized: true,
+          score: attempt.score,
+          percentage: attempt.percentage,
+          finalizedAt: attempt.submittedAt,
+          message: `Attempt was already finalized on server (${attempt.status}).`
+        });
+      }
+
       return res.status(409).json({
         error: `Attempt is already finalized (${attempt.status}). Conflicting offline modifications rejected.`,
         attemptStatus: attempt.status,
@@ -553,10 +591,10 @@ export function syncAttemptBatch(req: AuthenticatedRequest, res: Response) {
       clientReportedStatus === 'submitted';
 
     if (shouldFinalize) {
-      scoreResult = calculateAndSaveScore(attemptId, 'submitted');
+      scoreResult = calculateAndSaveScore(attemptId as string, 'submitted');
       finalStatus = 'submitted';
     } else if (isPastDeadline && attempt.status === 'in_progress') {
-      scoreResult = calculateAndSaveScore(attemptId, 'timed_out');
+      scoreResult = calculateAndSaveScore(attemptId as string, 'timed_out');
       finalStatus = 'timed_out';
     }
 

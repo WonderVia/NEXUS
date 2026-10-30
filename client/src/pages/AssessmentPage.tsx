@@ -692,14 +692,53 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
     setShowSubmitModal(false);
 
     try {
+      // 1. If currently connected, prioritize online submission
+      if (offlineState.isOnline) {
+        try {
+          const syncRes = await offlineSyncManager.syncNow(true);
+          if (syncRes && syncRes.isFinalized) {
+            if (window.electronAPI?.offline?.setSubmissionState) {
+              await window.electronAPI.offline.setSubmissionState(attempt.id, 'submitted');
+            }
+            setIsSubmitting(false);
+            onFinish(syncRes);
+            return;
+          }
+        } catch {}
+
+        try {
+          const directRes = await attemptsAPI.submit(attempt.id);
+          if (window.electronAPI?.offline?.setSubmissionState) {
+            await window.electronAPI.offline.setSubmissionState(attempt.id, 'submitted');
+          }
+          setIsSubmitting(false);
+          onFinish(directRes);
+          return;
+        } catch (apiErr: any) {
+          console.warn('[AssessmentPage] Direct submission error:', apiErr.message);
+          if (apiErr.message?.includes('already') || apiErr.message?.includes('finalized') || apiErr.message?.includes('flagged')) {
+            try {
+              const latest = await attemptsAPI.getById(attempt.id);
+              if (window.electronAPI?.offline?.setSubmissionState) {
+                await window.electronAPI.offline.setSubmissionState(attempt.id, 'submitted');
+              }
+              setIsSubmitting(false);
+              onFinish(latest.attempt);
+              return;
+            } catch {}
+          }
+        }
+      }
+
+      // 2. If genuinely offline, save durable local state
       const res = await offlineSyncManager.submitDurable(false, 'candidate_submitted');
       if (res.synced && res.result) {
         onFinish(res.result);
       } else {
         // Saved safely offline! Notify student
         setOfflineSubmittedNotice(res.message);
-        setIsSubmitting(false);
       }
+      setIsSubmitting(false);
     } catch (err: any) {
       alert(err.message || 'Submission failed');
       setIsSubmitting(false);
@@ -1715,9 +1754,29 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
             <div className="flex space-x-3">
               <button
                 onClick={async () => {
-                  const res = await offlineSyncManager.syncNow(true);
-                  if (res && res.isFinalized) {
-                    onFinish(res);
+                  try {
+                    let res = await offlineSyncManager.syncNow(true);
+                    if (!res || !res.isFinalized) {
+                      const directRes = await attemptsAPI.submit(attempt.id);
+                      if (directRes) {
+                        res = { isFinalized: true, ...directRes };
+                      }
+                    }
+                    if (res && res.isFinalized) {
+                      setOfflineSubmittedNotice(null);
+                      onFinish(res);
+                      return;
+                    }
+                  } catch (err: any) {
+                    try {
+                      const latest = await attemptsAPI.getById(attempt.id);
+                      if (latest?.attempt?.status === 'submitted' || latest?.attempt?.status === 'flagged') {
+                        setOfflineSubmittedNotice(null);
+                        onFinish(latest.attempt);
+                        return;
+                      }
+                    } catch {}
+                    alert('Synchronization notice: ' + (err.message || 'Server check in progress'));
                   }
                 }}
                 className="flex-1 py-3 bg-black hover:bg-neutral-800 text-white border-2 border-black font-bold text-xs uppercase tracking-[0.12em] flex items-center justify-center gap-2 transition cursor-pointer"
