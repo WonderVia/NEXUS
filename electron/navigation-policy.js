@@ -35,14 +35,38 @@ class NavigationPolicy {
     this.approvedOrigins.add('http://127.0.0.1:5173');
     this.approvedOrigins.add('http://localhost:5000');
     this.approvedOrigins.add('http://127.0.0.1:5000');
+    this.aiUsage = 'prohibited';
+    this.externalResourceAccess = 'restricted';
   }
 
-  setExamActive(active, permittedDomains = []) {
+  setExamActive(active, options = {}) {
     this.isExamActive = Boolean(active);
+    
+    let permitted = [];
+    if (Array.isArray(options)) {
+      permitted = [...options];
+    } else if (options && typeof options === 'object') {
+      permitted = Array.isArray(options.permittedExternalDomains) 
+        ? [...options.permittedExternalDomains] 
+        : (Array.isArray(options.permittedWebsites) ? [...options.permittedWebsites] : []);
+      this.aiUsage = options.aiUsage || 'prohibited';
+      this.externalResourceAccess = options.externalResourceAccess || 'restricted';
+    }
+
+    // If AI usage is allowed for this assessment, automatically permit supported AI domains
+    if (this.aiUsage === 'allowed') {
+      permitted.push(
+        'chatgpt.com', 'openai.com', 
+        'claude.ai', 'anthropic.com', 
+        'gemini.google.com', 'perplexity.ai', 
+        'copilot.microsoft.com'
+      );
+    }
+
     this.permittedExternalDomains = new Set(
-      permittedDomains.map(d => d.toLowerCase().trim()).filter(Boolean)
+      permitted.map(d => d.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim()).filter(Boolean)
     );
-    console.log(`[Navigation Policy] Exam active: ${this.isExamActive}. Permitted external domains:`, Array.from(this.permittedExternalDomains));
+    console.log(`[Navigation Policy] Exam active: ${this.isExamActive}. AI Usage: ${this.aiUsage}, Ext Access: ${this.externalResourceAccess}. Permitted domains:`, Array.from(this.permittedExternalDomains));
   }
 
   addApprovedOrigin(origin) {
@@ -90,7 +114,16 @@ class NavigationPolicy {
       return { allowed: true, reason: 'outside_exam_session' };
     }
 
-    // 4. During active exam, check if domain is explicitly permitted by exam policy
+    // 4. During active exam, check if external resource access is generally allowed or domain is permitted
+    if (this.externalResourceAccess === 'allowed') {
+      return {
+        allowed: true,
+        monitored: true,
+        reason: 'external_resource_access_allowed',
+        domain: parsed.hostname
+      };
+    }
+
     if (this.isPermittedExternalDomain(parsed.hostname)) {
       return { 
         allowed: true, 

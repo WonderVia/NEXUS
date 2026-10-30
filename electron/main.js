@@ -403,8 +403,7 @@ ipcMain.handle('security:set-exam-mode', (event, active) => {
 
 ipcMain.handle('security:set-exam-policy', (event, policy) => {
   if (!validateSender(event)) return false;
-  const permitted = Array.isArray(policy?.permittedExternalDomains) ? policy.permittedExternalDomains : [];
-  navigationPolicy.setExamActive(isExamMode, permitted);
+  navigationPolicy.setExamActive(isExamMode, policy);
   return true;
 });
 

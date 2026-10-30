@@ -25,6 +25,23 @@ let activeAttemptId = null;
 let activeSessionData = null;
 let tabVisitTimestamps = {}; // tabId -> { url, startTime, label }
 
+function isAiDomain(url) {
+  return /chatgpt\.com|openai\.com|claude\.ai|anthropic\.com|gemini\.google\.com|perplexity\.ai|copilot\.microsoft\.com/i.test(url);
+}
+
+function isPermittedDomain(url, permittedWebsites) {
+  if (!url || !permittedWebsites || !Array.isArray(permittedWebsites) || permittedWebsites.length === 0) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return permittedWebsites.some(site => {
+      const clean = site.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim();
+      return hostname === clean || hostname.endsWith(`.${clean}`);
+    });
+  } catch {
+    return false;
+  }
+}
+
 // Check backend for active assessment session
 async function checkActiveSession() {
   try {
@@ -56,7 +73,14 @@ function handleIncomingMessage(message, sender, sendResponse) {
   if (message.type === 'SET_ASSESSMENT_ACTIVE') {
     activeAssessmentToken = message.token || null;
     activeAttemptId = message.attemptId;
-    console.log('[Proctor Extension] Assessment activated explicitly:', activeAttemptId);
+    if (message.policy) {
+      activeSessionData = {
+        ...(activeSessionData || {}),
+        attemptId: message.attemptId,
+        policy: message.policy
+      };
+    }
+    console.log('[Proctor Extension] Assessment activated explicitly:', activeAttemptId, 'Policy:', message.policy);
     chrome.action.setBadgeText({ text: 'ON' });
     chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
     sendResponse({ success: true, activeAttemptId });
@@ -77,35 +101,82 @@ function handleIncomingMessage(message, sender, sendResponse) {
     sendResponse({
       active: !!activeAttemptId,
       attemptId: activeAttemptId,
-      session: activeSessionData
+      session: activeSessionData,
+      policy: activeSessionData?.policy || null
+    });
+    return true;
+  }
+
+  if (message.type === 'GET_POLICY') {
+    sendResponse({
+      policy: activeSessionData?.policy || null
     });
     return true;
   }
 
   if (message.type === 'CONTENT_QUERY_DETECTED') {
-    console.log(`[WUElev8 Background] Received prompt on ${message.platform}. Query length: ${(message.query || '').length}`);
-    reportViolation({
-      eventType: 'ai_query_submitted',
-      severity: 'high',
-      details: `${message.platform} prompt submitted: "${message.query}"`,
-      duration: 0,
-      detectionSource: 'browser_extension',
-      url: message.url,
-      prompt: message.query
-    }).then(result => {
-      sendResponse({ success: true, saved: !!result, result });
-    }).catch(err => {
-      console.error('[WUElev8 Background] Error reporting prompt:', err);
-      sendResponse({ success: false, error: err.message });
-    });
-    return true;
+    const policy = activeSessionData?.policy || {};
+    const aiUsage = policy.aiUsage || 'prohibited';
+    const aiPromptMonitoring = policy.aiPromptMonitoring || 'disabled';
+
+    console.log(`[WUElev8 Background] Received prompt on ${message.platform}. AI Usage: ${aiUsage}, Monitoring: ${aiPromptMonitoring}`);
+
+    if (aiUsage === 'allowed') {
+      if (aiPromptMonitoring === 'disabled') {
+        console.log('[WUElev8 Background] AI prompt monitoring disabled for this assessment.');
+        sendResponse({ success: true, ignored: true });
+        return true;
+      }
+
+      // Scenario A: AI is allowed, prompt monitoring enabled
+      reportViolation({
+        eventType: 'ai_query_submitted',
+        severity: 'low',
+        details: `${message.platform} prompt submitted: "${message.query}"`,
+        duration: 0,
+        detectionSource: 'browser_extension',
+        url: message.url,
+        prompt: message.query
+      }).then(result => {
+        sendResponse({ success: true, saved: !!result, result, isAllowed: true });
+      }).catch(err => {
+        console.error('[WUElev8 Background] Error reporting prompt:', err);
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    } else {
+      // Scenario B: AI is prohibited
+      reportViolation({
+        eventType: 'ai_query_submitted',
+        severity: 'critical',
+        details: `Prohibited ${message.platform} prompt attempted: "${message.query}"`,
+        duration: 0,
+        detectionSource: 'browser_extension',
+        url: message.url,
+        prompt: message.query
+      }).then(result => {
+        sendResponse({ success: true, saved: !!result, result, isViolation: true });
+      }).catch(err => {
+        console.error('[WUElev8 Background] Error reporting prohibited prompt:', err);
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
   }
 
   if (message.type === 'CONTENT_RESPONSE_DETECTED') {
-    console.log(`[WUElev8 Background] Received observable response on ${message.platform}. Snippet length: ${(message.responseSnippet || '').length}`);
+    const policy = activeSessionData?.policy || {};
+    const aiUsage = policy.aiUsage || 'prohibited';
+    const aiPromptMonitoring = policy.aiPromptMonitoring || 'disabled';
+
+    if (aiUsage === 'allowed' && aiPromptMonitoring === 'disabled') {
+      sendResponse({ success: true, ignored: true });
+      return true;
+    }
+
     reportViolation({
       eventType: 'ai_response_received',
-      severity: 'medium',
+      severity: aiUsage === 'allowed' ? 'low' : 'high',
       details: `${message.platform} response received: "${message.responseSnippet}"`,
       duration: 0,
       detectionSource: 'browser_extension',
@@ -119,10 +190,13 @@ function handleIncomingMessage(message, sender, sendResponse) {
   }
 
   if (message.type === 'CONTENT_SEARCH_QUERY') {
-    console.log(`[WUElev8 Background] Received search query on ${message.platform}. Query length: ${(message.query || '').length}`);
+    const policy = activeSessionData?.policy || {};
+    const extAccess = policy.externalResourceAccess || 'restricted';
+    const isPermitted = extAccess === 'allowed' || isPermittedDomain(message.url, policy.permittedWebsites);
+
     reportViolation({
       eventType: 'search_query_submitted',
-      severity: 'medium',
+      severity: isPermitted ? 'low' : 'medium',
       details: `${message.platform} query submitted: "${message.query}"`,
       duration: 0,
       detectionSource: 'browser_extension',
@@ -147,24 +221,90 @@ if (chrome.runtime.onMessageExternal) {
   chrome.runtime.onMessageExternal.addListener(handleIncomingMessage);
 }
 
+// Process monitored tab navigation with assessment-specific policy
+function handleMonitoredNavigation(tabId, url) {
+  const matchedDomain = getMonitoredDomain(url);
+  if (!matchedDomain) return;
+
+  const now = Date.now();
+  tabVisitTimestamps[tabId] = { url, startTime: now, label: matchedDomain };
+
+  const policy = activeSessionData?.policy || {};
+  const isAI = isAiDomain(url);
+  const aiUsage = policy.aiUsage || 'prohibited';
+  const extAccess = policy.externalResourceAccess || 'restricted';
+  const permitted = policy.permittedWebsites || [];
+  const isPermittedExt = extAccess === 'allowed' || isPermittedDomain(url, permitted);
+
+  if (isAI) {
+    if (aiUsage === 'prohibited') {
+      reportViolation({
+        eventType: 'external_site_visit',
+        severity: 'critical',
+        details: `Candidate attempted to access prohibited AI tool: ${matchedDomain}.`,
+        duration: 0,
+        detectionSource: 'browser_extension',
+        url
+      });
+
+      try {
+        chrome.notifications?.create({
+          type: 'basic',
+          iconUrl: 'icon128.png',
+          title: 'WUElev8 Assessment Shield — AI Prohibited',
+          message: `Access to ${matchedDomain} is PROHIBITED for this assessment. Activity has been flagged.`,
+          priority: 2
+        });
+      } catch {}
+    } else {
+      // Scenario A: AI usage is allowed!
+      reportViolation({
+        eventType: 'external_site_visit',
+        severity: 'low',
+        details: `Candidate navigated to approved AI resource: ${matchedDomain}.`,
+        duration: 0,
+        detectionSource: 'browser_extension',
+        url
+      });
+    }
+  } else {
+    // Non-AI external site
+    if (!isPermittedExt) {
+      reportViolation({
+        eventType: 'external_site_visit',
+        severity: 'high',
+        details: `Candidate accessed restricted external site: ${matchedDomain}.`,
+        duration: 0,
+        detectionSource: 'browser_extension',
+        url
+      });
+
+      try {
+        chrome.notifications?.create({
+          type: 'basic',
+          iconUrl: 'icon128.png',
+          title: 'WUElev8 Assessment Shield — Policy Alert',
+          message: `Access to ${matchedDomain} is restricted by exam policy.`,
+          priority: 1
+        });
+      } catch {}
+    } else {
+      reportViolation({
+        eventType: 'external_site_visit',
+        severity: 'low',
+        details: `Candidate navigated to permitted external resource: ${matchedDomain}.`,
+        duration: 0,
+        detectionSource: 'browser_extension',
+        url
+      });
+    }
+  }
+}
+
 // Monitor tab URL changes
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete' || !tab.url) return;
-
-  const matchedDomain = getMonitoredDomain(tab.url);
-  if (matchedDomain) {
-    const now = Date.now();
-    tabVisitTimestamps[tabId] = { url: tab.url, startTime: now, label: matchedDomain };
-
-    reportViolation({
-      eventType: 'external_site_visit',
-      severity: 'medium',
-      details: `Student switched to ${matchedDomain}.`,
-      duration: 0,
-      detectionSource: 'browser_extension',
-      url: tab.url
-    });
-  }
+  handleMonitoredNavigation(tabId, tab.url);
 });
 
 // Monitor when tabs are activated (switched to)
@@ -177,15 +317,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     if (matchedDomain) {
       const existing = tabVisitTimestamps[tabId];
       if (!existing || (Date.now() - existing.startTime) > 5000) {
-        tabVisitTimestamps[tabId] = { url: tab.url, startTime: Date.now(), label: matchedDomain };
-        reportViolation({
-          eventType: 'external_site_visit',
-          severity: 'medium',
-          details: `Student switched to ${matchedDomain}.`,
-          duration: 0,
-          detectionSource: 'browser_extension',
-          url: tab.url
-        });
+        handleMonitoredNavigation(tabId, tab.url);
       }
     }
   } catch {

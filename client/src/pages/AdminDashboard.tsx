@@ -3,11 +3,10 @@ import { Assessment, Attempt, ProctoringEvent, Question, User, AnalyticsSummary 
 import { analyticsAPI, assessmentsAPI, questionsAPI, proctoringAPI, attemptsAPI } from '../services/api';
 import { 
   BarChart3, Users, BookOpen, ShieldAlert, Download, CheckCircle2, 
-  XCircle, AlertTriangle, Clock, Search, Filter, RefreshCw, Plus, 
-  Trash2, Edit3, Eye, FileText, Check, ChevronRight, Sliders, Bot,
-  ArrowUpRight, ArrowDownLeft, Sparkles, Send, Globe, MessageSquare
+  XCircle, Clock, Search, Filter, RefreshCw, Plus, 
+  Trash2, Eye, Check, Sliders, Bot,
+  ArrowUpRight, ArrowDownLeft, Sparkles, Send, Globe
 } from 'lucide-react';
-
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'analytics' | 'attempts' | 'assessments' | 'students'>('analytics');
@@ -38,6 +37,7 @@ export const AdminDashboard: React.FC = () => {
   // Policy Editor Modal
   const [editingPolicyAssessment, setEditingPolicyAssessment] = useState<Assessment | null>(null);
   const [policyForm, setPolicyForm] = useState<any>(null);
+  const [newPermittedDomain, setNewPermittedDomain] = useState('');
 
   // Question Form Modal
   const [showQuestionModal, setShowQuestionModal] = useState(false);
@@ -132,11 +132,9 @@ export const AdminDashboard: React.FC = () => {
         explanation: newExplanation
       });
       setShowQuestionModal(false);
-      // Reset form
       setNewQuestionText('');
       setNewOptions(['', '', '', '']);
       setNewExplanation('');
-      // Reload questions
       openQuestionsManager(selectedAssessmentForQuestions);
     } catch (err: any) {
       alert(err.message || 'Failed to add question');
@@ -184,46 +182,47 @@ export const AdminDashboard: React.FC = () => {
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-white text-black font-swiss">
       
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-800 mb-8 gap-4">
+      {/* 12-Column Swiss Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-2 border-black mb-8 gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-purple-500/10 text-purple-400 border border-purple-500/20">
-              Admin & Proctor Console
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-2.5 h-2.5 bg-[#c90000] inline-block"></span>
+            <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-black">
+              01 / OPERATIONS & AUDIT CONTROL CONSOLE
             </span>
-            <span className="text-xs text-slate-400">• WUElev8 Assessment Suite</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+          <h1 className="text-3xl sm:text-5xl font-extrabold text-black uppercase tracking-tighter leading-[0.95]">
             Assessment Operations & Auditing
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Export Results CSV */}
           <a
             href={analyticsAPI.getExportUrl('results')}
             download
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition"
+            className="px-3.5 py-2 bg-white hover:bg-black hover:text-white text-black border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5 text-blue-400" />
-            <span>Export Scores (CSV)</span>
+            <Download className="w-3.5 h-3.5" />
+            <span>Scores (CSV)</span>
           </a>
 
           {/* Export Events CSV */}
           <a
             href={analyticsAPI.getExportUrl('events')}
             download
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition"
+            className="px-3.5 py-2 bg-white hover:bg-black hover:text-white text-black border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5 text-amber-400" />
-            <span>Export Events (CSV)</span>
+            <Download className="w-3.5 h-3.5" />
+            <span>Events (CSV)</span>
           </a>
 
           <button
             onClick={loadAllData}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+            title="Refresh System"
+            className="p-2 bg-black hover:bg-neutral-800 text-white border-2 border-black transition cursor-pointer"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
@@ -231,13 +230,13 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-800 mb-8 overflow-x-auto">
+      <div className="flex border-b-2 border-black mb-8 overflow-x-auto bg-[#f0f0f0] pt-2 px-2 gap-2">
         <button
           onClick={() => setActiveTab('analytics')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition flex items-center gap-2 ${
+          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 ${
             activeTab === 'analytics'
-              ? 'border-purple-500 text-purple-400'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'bg-black text-white border-b-0'
+              : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
           }`}
         >
           <BarChart3 className="w-4 h-4" /> Assessment Analytics
@@ -245,10 +244,10 @@ export const AdminDashboard: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('attempts')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition flex items-center gap-2 ${
+          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 ${
             activeTab === 'attempts'
-              ? 'border-purple-500 text-purple-400'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'bg-black text-white border-b-0'
+              : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
           }`}
         >
           <ShieldAlert className="w-4 h-4" /> Proctoring Attempts & Audit ({attempts.length})
@@ -256,84 +255,84 @@ export const AdminDashboard: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('assessments')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition flex items-center gap-2 ${
+          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 ${
             activeTab === 'assessments'
-              ? 'border-purple-500 text-purple-400'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'bg-black text-white border-b-0'
+              : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
           }`}
         >
-          <BookOpen className="w-4 h-4" /> Assessments & Questions ({assessments.length})
+          <BookOpen className="w-4 h-4" /> Security Settings & Questions ({assessments.length})
         </button>
 
         <button
           onClick={() => setActiveTab('students')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition flex items-center gap-2 ${
+          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 ${
             activeTab === 'students'
-              ? 'border-purple-500 text-purple-400'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'bg-black text-white border-b-0'
+              : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
           }`}
         >
-          <Users className="w-4 h-4" /> Candidates Directory ({students.length})
+          <Users className="w-4 h-4" /> Candidate Directory ({students.length})
         </button>
       </div>
 
       {/* TAB 1: ANALYTICS */}
       {activeTab === 'analytics' && analytics && (
         <div className="space-y-8">
-          {/* 5 Real Metric Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            <div className="bg-slate-900/70 border border-slate-800 p-5 rounded-2xl">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Attempts</div>
-              <div className="text-2xl font-black text-white mt-1">{analytics.totalAttempts}</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">{analytics.totalStudents} Registered Students</div>
+          {/* 5 Real Metric Cards in Ruled Matrix */}
+          <div className="border-2 border-black bg-[#f0f0f0] grid grid-cols-2 lg:grid-cols-5 divide-y-2 lg:divide-y-0 lg:divide-x-2 divide-black">
+            <div className="p-5 bg-white">
+              <div className="text-[10px] font-bold text-neutral-600 uppercase tracking-[0.12em]">Total Attempts</div>
+              <div className="text-3xl font-black text-black mt-1 leading-none">{analytics.totalAttempts}</div>
+              <div className="text-[10px] text-neutral-500 font-mono mt-1">{analytics.totalStudents} Registered Students</div>
             </div>
 
-            <div className="bg-slate-900/70 border border-slate-800 p-5 rounded-2xl">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Completed</div>
-              <div className="text-2xl font-black text-emerald-400 mt-1">{analytics.completedAttempts}</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">{analytics.completionRate}% Completion Rate</div>
+            <div className="p-5 bg-white">
+              <div className="text-[10px] font-bold text-neutral-600 uppercase tracking-[0.12em]">Completed</div>
+              <div className="text-3xl font-black text-black mt-1 leading-none">{analytics.completedAttempts}</div>
+              <div className="text-[10px] text-neutral-500 font-mono mt-1">{analytics.completionRate}% Completion Rate</div>
             </div>
 
-            <div className="bg-slate-900/70 border border-slate-800 p-5 rounded-2xl">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Average Score</div>
-              <div className="text-2xl font-black text-blue-400 mt-1">{analytics.averageScore}%</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Authoritative Backend Graded</div>
+            <div className="p-5 bg-white">
+              <div className="text-[10px] font-bold text-neutral-600 uppercase tracking-[0.12em]">Average Score</div>
+              <div className="text-3xl font-black text-black mt-1 leading-none">{analytics.averageScore}%</div>
+              <div className="text-[10px] text-neutral-500 font-mono mt-1">Authoritative Key Graded</div>
             </div>
 
-            <div className="bg-slate-900/70 border border-slate-800 p-5 rounded-2xl">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Flagged Sessions</div>
-              <div className="text-2xl font-black text-amber-400 mt-1">{analytics.flaggedSessions}</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Proctoring Violations &gt;3</div>
+            <div className="p-5 bg-white">
+              <div className="text-[10px] font-bold text-neutral-600 uppercase tracking-[0.12em]">Flagged Sessions</div>
+              <div className="text-3xl font-black text-[#c90000] mt-1 leading-none">{analytics.flaggedSessions}</div>
+              <div className="text-[10px] text-neutral-500 font-mono mt-1">Violations Limit Exceeded</div>
             </div>
 
-            <div className="bg-slate-900/70 border border-slate-800 p-5 rounded-2xl col-span-2 lg:col-span-1">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Active Tests</div>
-              <div className="text-2xl font-black text-purple-400 mt-1">{analytics.totalAssessments}</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">NGATA 2026 Live</div>
+            <div className="p-5 bg-white col-span-2 lg:col-span-1">
+              <div className="text-[10px] font-bold text-neutral-600 uppercase tracking-[0.12em]">Active Tests</div>
+              <div className="text-3xl font-black text-black mt-1 leading-none">{analytics.totalAssessments}</div>
+              <div className="text-[10px] text-neutral-500 font-mono mt-1">Scenario A & B Ready</div>
             </div>
           </div>
 
           {/* Violations Breakdown Section */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
-              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-amber-400" />
-                Observed Proctoring Violations by Category
-              </h3>
+            <div className="border-2 border-black bg-white p-6">
+              <div className="text-xs font-bold uppercase tracking-[0.12em] text-black mb-4 border-b-2 border-black pb-2 flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-black" />
+                <span>Observed Violations by Category</span>
+              </div>
               
               {analytics.violationsByType.length === 0 ? (
-                <p className="text-xs text-slate-500 py-6 text-center">No proctoring violations recorded yet.</p>
+                <p className="text-xs text-neutral-500 py-6 text-center font-mono">No proctoring violations recorded yet.</p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {analytics.violationsByType.map((v) => (
-                    <div key={v.eventType} className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl flex items-center justify-between">
+                    <div key={v.eventType} className="p-3 bg-[#f0f0f0] border-2 border-black flex items-center justify-between">
                       <div>
-                        <div className="text-xs font-bold text-slate-200 capitalize">
-                          {v.eventType.replace('_', ' ')}
+                        <div className="text-xs font-bold text-black uppercase tracking-tight">
+                          {v.eventType.replace(/_/g, ' ')}
                         </div>
-                        <div className="text-[10px] text-slate-400 uppercase">Severity: {v.severity}</div>
+                        <div className="text-[10px] text-neutral-600 uppercase font-mono">Severity: {v.severity}</div>
                       </div>
-                      <span className="font-mono text-sm font-extrabold text-amber-400 px-2 py-0.5 rounded bg-amber-500/10">
+                      <span className="font-mono text-sm font-extrabold text-black px-2.5 py-0.5 bg-white border border-black">
                         {v.count} Events
                       </span>
                     </div>
@@ -342,25 +341,23 @@ export const AdminDashboard: React.FC = () => {
               )}
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
-              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
-                <Filter className="w-4 h-4 text-purple-400" />
-                Proctoring Severity Distribution
-              </h3>
+            <div className="border-2 border-black bg-white p-6">
+              <div className="text-xs font-bold uppercase tracking-[0.12em] text-black mb-4 border-b-2 border-black pb-2 flex items-center gap-2">
+                <Filter className="w-4 h-4 text-black" />
+                <span>Severity Distribution Matrix</span>
+              </div>
 
               {analytics.severityBreakdown.length === 0 ? (
-                <p className="text-xs text-slate-500 py-6 text-center">No incident data available.</p>
+                <p className="text-xs text-neutral-500 py-6 text-center font-mono">No incident data available.</p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {analytics.severityBreakdown.map((s) => (
-                    <div key={s.severity} className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl flex items-center justify-between">
+                    <div key={s.severity} className="p-3 bg-[#f0f0f0] border-2 border-black flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className={`w-2.5 h-2.5 rounded-full ${
-                          s.severity === 'critical' ? 'bg-red-500' : s.severity === 'high' ? 'bg-orange-500' : s.severity === 'medium' ? 'bg-amber-400' : 'bg-blue-400'
-                        }`}></span>
-                        <span className="text-xs font-bold text-slate-200 capitalize">{s.severity}</span>
+                        <span className={`w-2.5 h-2.5 ${s.severity === 'critical' ? 'bg-[#c90000]' : 'bg-black'}`}></span>
+                        <span className="text-xs font-bold text-black uppercase tracking-[0.12em]">{s.severity}</span>
                       </div>
-                      <span className="font-mono text-xs font-bold text-slate-300">
+                      <span className="font-mono text-xs font-bold text-black">
                         {s.count} Incidents
                       </span>
                     </div>
@@ -376,22 +373,22 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'attempts' && (
         <div className="space-y-6">
           {/* Filters Bar */}
-          <div className="flex flex-col sm:flex-row gap-3 bg-slate-900/70 p-4 rounded-2xl border border-slate-800">
+          <div className="flex flex-col sm:flex-row gap-3 bg-[#f0f0f0] p-4 border-2 border-black">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+              <Search className="w-4 h-4 text-neutral-500 absolute left-3 top-2.5" />
               <input
                 type="text"
                 placeholder="Search candidate by name, email, or test..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                className="w-full bg-white border-2 border-black pl-9 pr-4 py-2 text-xs text-black placeholder-neutral-400 focus:outline-none focus:ring-0 focus:border-black font-sans"
               />
             </div>
 
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none"
+              className="bg-white border-2 border-black px-3 py-2 text-xs text-black focus:outline-none font-bold uppercase tracking-[0.12em]"
             >
               <option value="">All Statuses</option>
               <option value="submitted">Submitted</option>
@@ -400,35 +397,35 @@ export const AdminDashboard: React.FC = () => {
               <option value="flagged">Flagged</option>
             </select>
 
-            <label className="flex items-center gap-2 text-xs text-slate-300 px-2 cursor-pointer">
+            <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-black px-2 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={flaggedOnly}
                 onChange={(e) => setFlaggedOnly(e.target.checked)}
-                className="rounded border-slate-700 bg-slate-950 text-purple-600"
+                className="w-4 h-4 border-2 border-black bg-white text-black"
               />
-              <span>Flagged / High Violations Only</span>
+              <span>Flagged Violations Only</span>
             </label>
           </div>
 
           {/* Attempts Table */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-950/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+          <div className="border-2 border-black bg-white overflow-x-auto">
+            <table className="w-full text-left text-xs text-black">
+              <thead className="bg-black text-white uppercase text-[10px] tracking-[0.12em] border-b-2 border-black">
                 <tr>
-                  <th className="p-4">Candidate</th>
-                  <th className="p-4">Assessment</th>
-                  <th className="p-4">Score</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4">Violations</th>
-                  <th className="p-4">Date / Time</th>
-                  <th className="p-4 text-right">Audit Trail</th>
+                  <th className="p-3.5">Candidate</th>
+                  <th className="p-3.5">Assessment</th>
+                  <th className="p-3.5">Score</th>
+                  <th className="p-3.5">Status</th>
+                  <th className="p-3.5">Violations</th>
+                  <th className="p-3.5">Date / Time</th>
+                  <th className="p-3.5 text-right">Audit Trail</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y-2 divide-black">
                 {filteredAttempts.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-500">
+                    <td colSpan={7} className="p-8 text-center text-neutral-500 font-mono">
                       No matching assessment attempts found.
                     </td>
                   </tr>
@@ -437,46 +434,40 @@ export const AdminDashboard: React.FC = () => {
                     const isFlagged = att.status === 'flagged' || (att.violationCount && att.violationCount >= 3);
 
                     return (
-                      <tr key={att.id} className="hover:bg-slate-800/30 transition">
-                        <td className="p-4">
-                          <div className="font-bold text-white">{att.studentName}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">{att.studentEmail}</div>
+                      <tr key={att.id} className="hover:bg-[#f0f0f0] transition">
+                        <td className="p-3.5">
+                          <div className="font-bold text-black uppercase tracking-tight">{att.studentName}</div>
+                          <div className="text-[10px] text-neutral-600 font-mono">{att.studentEmail}</div>
                         </td>
-                        <td className="p-4 max-w-xs truncate">
+                        <td className="p-3.5 max-w-xs truncate font-medium">
                           {att.assessmentTitle}
                         </td>
-                        <td className="p-4">
-                          <span className="font-mono font-bold text-white text-sm">
+                        <td className="p-3.5">
+                          <span className="font-mono font-black text-black text-sm">
                             {att.percentage !== null && att.percentage !== undefined ? `${att.percentage}%` : '—'}
                           </span>
                         </td>
-                        <td className="p-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                            att.status === 'submitted'
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                              : att.status === 'in_progress'
-                              ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse'
-                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                          }`}>
+                        <td className="p-3.5">
+                          <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] border border-black bg-[#f0f0f0] text-black">
                             {att.status}
                           </span>
                         </td>
-                        <td className="p-4">
-                          <span className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] ${
+                        <td className="p-3.5">
+                          <span className={`font-mono font-bold px-2 py-0.5 text-[11px] ${
                             isFlagged
-                              ? 'bg-red-500/10 text-red-400 border border-red-500/20 font-black'
-                              : 'text-slate-300'
+                              ? 'bg-[#c90000] text-white font-black'
+                              : 'text-black'
                           }`}>
                             {att.violationCount || 0} Events
                           </span>
                         </td>
-                        <td className="p-4 text-[11px] text-slate-400 font-mono">
+                        <td className="p-3.5 text-[11px] text-neutral-600 font-mono">
                           {new Date(att.startedAt).toLocaleString()}
                         </td>
-                        <td className="p-4 text-right">
+                        <td className="p-3.5 text-right">
                           <button
                             onClick={() => openAttemptAudit(att)}
-                            className="px-3 py-1.5 bg-slate-800 hover:bg-purple-600 hover:text-white text-purple-300 border border-slate-700 hover:border-purple-500 rounded-xl font-semibold transition flex items-center gap-1.5 ml-auto text-[11px]"
+                            className="px-3 py-1.5 bg-black hover:bg-neutral-800 text-white border-2 border-black font-bold uppercase tracking-[0.12em] transition cursor-pointer flex items-center gap-1.5 ml-auto text-[11px]"
                           >
                             <Eye className="w-3.5 h-3.5" /> Review Timeline
                           </button>
@@ -496,36 +487,83 @@ export const AdminDashboard: React.FC = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {assessments.map((a) => (
-              <div key={a.id} className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
+              <div key={a.id} className="border-2 border-black bg-white p-6 flex flex-col justify-between">
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  <div className="flex items-center justify-between mb-3 border-b-2 border-black pb-2">
+                    <span className="text-[10px] px-2 py-0.5 font-bold uppercase tracking-[0.12em] bg-black text-white">
                       Duration: {a.durationMinutes} Mins
                     </span>
-                    <span className="text-xs text-slate-400 font-mono">{a.questionCount || 0} Questions</span>
+                    <span className="text-xs text-neutral-600 font-mono font-bold">{a.questionCount || 0} Questions</span>
                   </div>
 
-                  <h3 className="text-base font-bold text-white mb-2">{a.title}</h3>
-                  <p className="text-xs text-slate-400 line-clamp-2 mb-4">{a.description}</p>
+                  <h3 className="text-xl font-extrabold uppercase tracking-tight text-black mb-2">{a.title}</h3>
+                  <p className="text-xs text-neutral-700 line-clamp-2 mb-4 leading-relaxed">{a.description}</p>
+
+                  {/* Security Policy Summary Ruled Matrix */}
+                  <div className="grid grid-cols-2 border-2 border-black bg-[#f0f0f0] divide-x-2 divide-y-2 divide-black text-[11px] mb-6">
+                    <div className="p-2.5 flex items-center justify-between">
+                      <span className="text-neutral-600 font-bold uppercase tracking-[0.12em]">AI Usage:</span>
+                      <span className={`font-bold px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] ${
+                        a.policy.aiUsage === 'allowed'
+                          ? 'bg-black text-white'
+                          : 'bg-[#c90000] text-white'
+                      }`}>
+                        {a.policy.aiUsage === 'allowed' ? 'Allowed' : 'Prohibited'}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 flex items-center justify-between">
+                      <span className="text-neutral-600 font-bold uppercase tracking-[0.12em]">Prompts:</span>
+                      <span className="font-bold px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] border border-black bg-white">
+                        {a.policy.aiPromptMonitoring === 'enabled' ? 'Monitored' : 'Disabled'}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 flex items-center justify-between">
+                      <span className="text-neutral-600 font-bold uppercase tracking-[0.12em]">Tabs:</span>
+                      <span className="font-bold px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] border border-black bg-white">
+                        {(a.policy.tabSwitchingPolicy || 'warn').toUpperCase()}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 flex items-center justify-between">
+                      <span className="text-neutral-600 font-bold uppercase tracking-[0.12em]">Action:</span>
+                      <span className={`font-bold px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] ${
+                        a.policy.violationHandling === 'terminate'
+                          ? 'bg-[#c90000] text-white'
+                          : 'bg-black text-white'
+                      }`}>
+                        {(a.policy.violationHandling || 'warn').replace('_', ' ').toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+                <div className="pt-4 border-t-2 border-black flex items-center justify-between gap-3">
                   <button
                     onClick={() => {
                       setEditingPolicyAssessment(a);
                       setPolicyForm({
                         durationMinutes: a.durationMinutes,
-                        policy: a.policy
+                        policy: {
+                          ...a.policy,
+                          aiUsage: a.policy.aiUsage || 'prohibited',
+                          aiPromptMonitoring: a.policy.aiPromptMonitoring || 'disabled',
+                          tabSwitchingPolicy: a.policy.tabSwitchingPolicy || 'warn',
+                          externalResourceAccess: a.policy.externalResourceAccess || 'restricted',
+                          permittedWebsites: Array.isArray(a.policy.permittedWebsites) ? a.policy.permittedWebsites : [],
+                          violationHandling: a.policy.violationHandling || 'warn'
+                        }
                       });
                     }}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1 transition"
+                    className="px-3.5 py-2 bg-white hover:bg-black hover:text-white text-black border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    <Sliders className="w-3.5 h-3.5 text-blue-400" /> Configure Policy
+                    <Sliders className="w-3.5 h-3.5" /> Configure Policy
                   </button>
 
                   <button
                     onClick={() => openQuestionsManager(a)}
-                    className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-lg shadow-purple-500/20"
+                    className="px-4 py-2 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <BookOpen className="w-3.5 h-3.5" /> Manage Questions
                   </button>
@@ -538,23 +576,23 @@ export const AdminDashboard: React.FC = () => {
 
       {/* TAB 4: STUDENTS DIRECTORY */}
       {activeTab === 'students' && (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-slate-950/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+        <div className="border-2 border-black bg-white overflow-x-auto">
+          <table className="w-full text-left text-xs text-black">
+            <thead className="bg-black text-white uppercase text-[10px] tracking-[0.12em] border-b-2 border-black">
               <tr>
-                <th className="p-4">Candidate Name</th>
-                <th className="p-4">Email</th>
-                <th className="p-4">Account ID</th>
-                <th className="p-4">Registered Date</th>
+                <th className="p-3.5">Candidate Name</th>
+                <th className="p-3.5">Email</th>
+                <th className="p-3.5">Account ID</th>
+                <th className="p-3.5">Registered Date</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y-2 divide-black">
               {students.map((st) => (
-                <tr key={st.id} className="hover:bg-slate-800/30">
-                  <td className="p-4 font-bold text-white">{st.name}</td>
-                  <td className="p-4 font-mono text-slate-300">{st.email}</td>
-                  <td className="p-4 font-mono text-[11px] text-slate-400">{st.id}</td>
-                  <td className="p-4 text-slate-400">{st.createdAt ? new Date(st.createdAt).toLocaleDateString() : 'N/A'}</td>
+                <tr key={st.id} className="hover:bg-[#f0f0f0]">
+                  <td className="p-3.5 font-bold uppercase tracking-tight">{st.name}</td>
+                  <td className="p-3.5 font-mono text-neutral-700">{st.email}</td>
+                  <td className="p-3.5 font-mono text-[11px] text-neutral-600">{st.id}</td>
+                  <td className="p-3.5 text-neutral-600 font-mono">{st.createdAt ? new Date(st.createdAt).toLocaleDateString() : 'N/A'}</td>
                 </tr>
               ))}
             </tbody>
@@ -564,58 +602,61 @@ export const AdminDashboard: React.FC = () => {
 
       {/* MODAL 1: Individual Student Assessment Timeline & Review */}
       {selectedAttemptAudit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-3xl p-6 max-h-[85vh] flex flex-col shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-3xl bg-white border-2 border-black p-6 sm:p-8 max-h-[90vh] flex flex-col">
             
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+            <div className="flex items-center justify-between pb-4 border-b-2 border-black">
               <div>
-                <h3 className="font-bold text-white text-base flex items-center gap-2">
-                  <ShieldAlert className="w-5 h-5 text-amber-400" />
-                  Proctoring Audit Timeline: {selectedAttemptAudit.attempt.studentName}
+                <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-600 mb-1">
+                  AUDIT STREAM INSPECTION
+                </div>
+                <h3 className="font-extrabold text-black text-lg uppercase tracking-tight flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-black" />
+                  Candidate: {selectedAttemptAudit.attempt.studentName}
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Attempt: {selectedAttemptAudit.attempt.id} • Score: {selectedAttemptAudit.attempt.percentage ?? 'N/A'}% • Status: {selectedAttemptAudit.attempt.status}
+                <p className="text-xs text-neutral-600 font-mono mt-0.5">
+                  ID: {selectedAttemptAudit.attempt.id} • Score: {selectedAttemptAudit.attempt.percentage ?? 'N/A'}% • Status: {selectedAttemptAudit.attempt.status}
                 </p>
               </div>
               <button
                 onClick={() => setSelectedAttemptAudit(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1 border-2 border-black hover:bg-black hover:text-white transition cursor-pointer font-bold text-sm px-2.5"
               >
                 ✕
               </button>
             </div>
 
-            {/* Summary Statistics Pill Strip */}
-            <div className="py-3 px-4 my-2 bg-slate-950/60 rounded-2xl border border-slate-800 flex items-center justify-between text-xs">
+            {/* Summary Statistics Strip */}
+            <div className="py-3 px-4 my-3 bg-[#f0f0f0] border-2 border-black flex items-center justify-between text-xs font-bold uppercase tracking-[0.12em]">
               <div className="flex items-center space-x-6">
                 <div>
-                  <span className="text-slate-400">Total Audited Events: </span>
-                  <span className="font-bold text-white">{selectedAttemptAudit.events.length}</span>
+                  <span className="text-neutral-600">Events: </span>
+                  <span className="text-black">{selectedAttemptAudit.events.length}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">AI / Search Interceptions: </span>
-                  <span className="font-bold text-purple-400">
+                  <span className="text-neutral-600">AI Interceptions: </span>
+                  <span className="text-black">
                     {selectedAttemptAudit.events.filter(e => e.eventType === 'ai_query_submitted' || e.eventType === 'ai_response_received' || e.eventType === 'search_query_submitted' || e.detectionSource === 'browser_extension').length}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400">External Tab / App Switches: </span>
-                  <span className="font-bold text-amber-400">
+                  <span className="text-neutral-600">Tab Switches: </span>
+                  <span className="text-black">
                     {selectedAttemptAudit.events.filter(e => e.eventType === 'external_site_visit' || e.eventType === 'tab_switch' || e.eventType === 'external_app_detected').length}
                   </span>
                 </div>
               </div>
-              <span className="text-[11px] text-slate-500 font-mono">
-                Chronological Audit Stream (Real-Time)
+              <span className="text-[10px] text-neutral-600 font-mono">
+                Real-Time Authoritative Log
               </span>
             </div>
 
             {/* Timeline Stream */}
-            <div className="flex-1 overflow-y-auto py-2 space-y-2.5">
+            <div className="flex-1 overflow-y-auto py-2 space-y-2.5 divide-y-2 divide-black">
               {selectedAttemptAudit.events.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 text-xs">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
-                  Clean Session: No anomalous proctoring events or focus loss recorded for this candidate.
+                <div className="p-8 text-center text-xs font-bold uppercase tracking-[0.12em] bg-[#f0f0f0] border-2 border-black">
+                  <CheckCircle2 className="w-8 h-8 text-black mx-auto mb-2" />
+                  Clean Session: No anomalous proctoring events or focus loss recorded.
                 </div>
               ) : (
                 [...selectedAttemptAudit.events]
@@ -627,111 +668,105 @@ export const AdminDashboard: React.FC = () => {
                     const isSearchQuery = ev.eventType === 'search_query_submitted';
                     const isReturn = ev.eventType === 'assessment_return';
                     const isExternalSwitch = ev.eventType === 'external_site_visit' || ev.eventType === 'tab_switch' || ev.eventType === 'external_app_detected';
+                    const isProhibitedAI = (isAIQuery || (isExternalSwitch && ev.details.toLowerCase().includes('ai'))) && (ev.severity === 'critical' || ev.details.toLowerCase().includes('prohibited'));
+                    const isAllowedAI = isAIQuery && !isProhibitedAI;
 
                     return (
                       <div 
                         key={ev.id} 
-                        className={`p-3.5 rounded-2xl border transition-all ${
-                          isAIQuery ? 'bg-purple-950/30 border-purple-500/40' :
-                          isAIResponse ? 'bg-cyan-950/30 border-cyan-500/40' :
-                          isSearchQuery ? 'bg-blue-950/30 border-blue-500/40' :
-                          isReturn ? 'bg-emerald-950/30 border-emerald-500/40' :
-                          isExternalSwitch ? 'bg-amber-950/30 border-amber-500/40' :
-                          'bg-slate-950/70 border-slate-800'
+                        className={`p-3.5 border-2 pt-3 first:pt-3.5 transition-none ${
+                          isProhibitedAI ? 'bg-[#f0f0f0] border-[#c90000]' :
+                          isAllowedAI ? 'bg-[#f0f0f0] border-black' :
+                          isAIResponse ? 'bg-white border-black' :
+                          'bg-white border-neutral-300'
                         } flex items-start justify-between gap-4`}
                       >
                         <div className="space-y-1.5 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-xs font-bold text-slate-300 bg-slate-900 px-2 py-0.5 rounded-lg border border-slate-700">
+                            <span className="font-mono text-xs font-bold text-black bg-[#f0f0f0] px-2 py-0.5 border border-black">
                               {timeStr}
                             </span>
 
-                            {isAIQuery && (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-300 bg-purple-500/20 px-2.5 py-0.5 rounded-full">
-                                <Send className="w-3 h-3" /> AI Prompt Submitted
+                            {isProhibitedAI && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-[#c90000] px-2.5 py-0.5 uppercase tracking-[0.12em]">
+                                <ShieldAlert className="w-3 h-3" /> Prohibited AI Action (Violation)
+                              </span>
+                            )}
+
+                            {isAllowedAI && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-black px-2.5 py-0.5 uppercase tracking-[0.12em]">
+                                <Send className="w-3 h-3" /> AI Prompt (Audited & Permitted)
                               </span>
                             )}
 
                             {isAIResponse && (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-cyan-300 bg-cyan-500/20 px-2.5 py-0.5 rounded-full">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-black bg-[#f0f0f0] border border-black px-2.5 py-0.5 uppercase tracking-[0.12em]">
                                 <Sparkles className="w-3 h-3" /> AI Response Received
                               </span>
                             )}
 
                             {isSearchQuery && (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-300 bg-blue-500/20 px-2.5 py-0.5 rounded-full">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-black bg-[#f0f0f0] border border-black px-2.5 py-0.5 uppercase tracking-[0.12em]">
                                 <Search className="w-3 h-3" /> Search Query
                               </span>
                             )}
 
                             {isReturn && (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-300 bg-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-black bg-[#f0f0f0] border border-black px-2.5 py-0.5 uppercase tracking-[0.12em]">
                                 <ArrowDownLeft className="w-3 h-3" /> Returned to Assessment
                               </span>
                             )}
 
-                            {isExternalSwitch && (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-300 bg-amber-500/20 px-2.5 py-0.5 rounded-full">
+                            {isExternalSwitch && !isProhibitedAI && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-black bg-[#f0f0f0] border border-black px-2.5 py-0.5 uppercase tracking-[0.12em]">
                                 <ArrowUpRight className="w-3 h-3" /> External Navigation
                               </span>
                             )}
 
-                            {!isAIQuery && !isAIResponse && !isSearchQuery && !isReturn && !isExternalSwitch && (
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                                ev.severity === 'critical' ? 'bg-red-500/20 text-red-400' :
-                                ev.severity === 'high' ? 'bg-orange-500/20 text-orange-400' :
-                                ev.severity === 'medium' ? 'bg-amber-500/20 text-amber-400' :
-                                'bg-blue-500/20 text-blue-400'
-                              }`}>
+                            {!isAIQuery && !isAIResponse && !isSearchQuery && !isReturn && !isExternalSwitch && !isProhibitedAI && (
+                              <span className="text-[10px] px-2 py-0.5 font-bold uppercase tracking-[0.12em] bg-black text-white">
                                 {ev.severity} • {ev.eventType.replace(/_/g, ' ')}
                               </span>
                             )}
 
-                            <span className="text-[10px] text-slate-500 font-mono">
+                            <span className="text-[10px] text-neutral-600 font-mono">
                               Source: {ev.detectionSource.replace(/_/g, ' ')}
                             </span>
                           </div>
 
                           {/* Event Text / Telemetry Content */}
-                          <div className={`text-xs font-medium leading-relaxed ${
-                            isAIQuery ? 'text-purple-100 font-semibold pl-2 border-l-2 border-purple-500' :
-                            isAIResponse ? 'text-cyan-100 pl-2 border-l-2 border-cyan-500 font-sans' :
-                            isSearchQuery ? 'text-blue-100 pl-2 border-l-2 border-blue-500' :
-                            isReturn ? 'text-emerald-300 font-semibold' :
-                            isExternalSwitch ? 'text-amber-200 font-semibold' :
-                            'text-slate-300'
-                          }`}>
+                          <div className="text-xs font-medium text-black leading-relaxed mt-1">
                             {ev.details}
                           </div>
 
                           {ev.duration > 0 && (
-                            <div className="text-[10px] text-slate-500 font-mono">
+                            <div className="text-[10px] text-neutral-600 font-mono">
                               Duration recorded: {(ev.duration / 1000).toFixed(1)}s
                             </div>
                           )}
                         </div>
 
                         {/* Review Actions */}
-                        <div className="shrink-0 flex items-center space-x-1 pt-0.5">
+                        <div className="shrink-0 flex items-center space-x-1.5 pt-0.5">
                           {ev.reviewStatus === 'reviewed' ? (
-                            <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg">
+                            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white bg-black px-2 py-1">
                               Reviewed
                             </span>
                           ) : ev.reviewStatus === 'violation_confirmed' ? (
-                            <span className="text-[11px] font-semibold text-red-400 bg-red-500/10 px-2.5 py-1 rounded-lg">
+                            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white bg-[#c90000] px-2 py-1">
                               Flagged
                             </span>
                           ) : (
                             <div className="flex items-center space-x-1">
                               <button
                                 onClick={() => handleReviewEvent(ev.id, 'reviewed')}
-                                className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 rounded text-[10px] font-semibold transition"
+                                className="px-2 py-1 bg-white hover:bg-black hover:text-white text-black border border-black text-[10px] font-bold uppercase tracking-[0.12em] transition cursor-pointer"
                               >
-                                Mark Reviewed
+                                Review
                               </button>
                               <button
                                 onClick={() => handleReviewEvent(ev.id, 'violation_confirmed')}
-                                className="px-2 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-300 rounded text-[10px] font-semibold transition"
+                                className="px-2 py-1 bg-[#c90000] hover:bg-black text-white text-[10px] font-bold uppercase tracking-[0.12em] transition cursor-pointer"
                               >
                                 Flag
                               </button>
@@ -744,10 +779,10 @@ export const AdminDashboard: React.FC = () => {
               )}
             </div>
 
-            <div className="pt-4 border-t border-slate-800 text-right">
+            <div className="pt-4 border-t-2 border-black text-right mt-2">
               <button
                 onClick={() => setSelectedAttemptAudit(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold"
+                className="px-5 py-2.5 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] transition cursor-pointer"
               >
                 Close Audit Viewer
               </button>
@@ -758,27 +793,27 @@ export const AdminDashboard: React.FC = () => {
 
       {/* MODAL 2: Questions Management Modal */}
       {selectedAssessmentForQuestions && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-4xl bg-slate-900 border border-slate-700 rounded-3xl p-6 max-h-[85vh] flex flex-col shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-4xl bg-white border-2 border-black p-6 sm:p-8 max-h-[90vh] flex flex-col">
             
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+            <div className="flex items-center justify-between pb-4 border-b-2 border-black">
               <div>
-                <h3 className="font-bold text-white text-base">
+                <h3 className="font-extrabold text-black text-base uppercase tracking-tight">
                   Question Bank: {selectedAssessmentForQuestions.title}
                 </h3>
-                <p className="text-xs text-slate-400">{questionsList.length} Questions Configured</p>
+                <p className="text-xs text-neutral-600 font-mono">{questionsList.length} Questions Configured</p>
               </div>
 
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setShowQuestionModal(true)}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition"
+                  className="px-3.5 py-2 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Add New Question
+                  <Plus className="w-3.5 h-3.5" /> Add Question
                 </button>
                 <button
                   onClick={() => setSelectedAssessmentForQuestions(null)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                  className="p-1 border-2 border-black hover:bg-black hover:text-white transition cursor-pointer font-bold text-sm px-2.5"
                 >
                   ✕
                 </button>
@@ -788,24 +823,25 @@ export const AdminDashboard: React.FC = () => {
             {/* Questions list */}
             <div className="flex-1 overflow-y-auto py-4 space-y-3">
               {questionsList.map((q, idx) => (
-                <div key={q.id} className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800">
+                <div key={q.id} className="p-4 bg-[#f0f0f0] border-2 border-black">
                   <div className="flex items-start justify-between gap-4 mb-2">
-                    <span className="text-xs font-bold text-blue-400">
+                    <span className="text-xs font-bold uppercase tracking-[0.12em] bg-black text-white px-2 py-0.5">
                       Q{idx + 1} ({q.category})
                     </span>
                     <button
                       onClick={() => handleDeleteQuestion(q.id)}
-                      className="p-1 text-slate-400 hover:text-red-400 transition"
+                      className="p-1 text-black hover:text-[#c90000] transition cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
-                  <p className="text-xs font-medium text-white mb-2">{q.questionText}</p>
+                  <p className="text-xs font-bold text-black mb-2">{q.questionText}</p>
                   
-                  <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-400">
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-800 font-medium">
                     {q.options.map((opt, oIdx) => (
-                      <div key={oIdx} className={q.correctAnswer === oIdx ? 'text-emerald-400 font-bold' : ''}>
-                        {String.fromCharCode(65 + oIdx)}. {opt} {q.correctAnswer === oIdx ? '✓ (Correct)' : ''}
+                      <div key={oIdx} className={q.correctAnswer === oIdx ? 'text-black font-extrabold flex items-center gap-1' : ''}>
+                        <span>{String.fromCharCode(65 + oIdx)}. {opt}</span>
+                        {q.correctAnswer === oIdx && <span className="text-[10px] bg-black text-white px-1.5 py-0.2">CORRECT</span>}
                       </div>
                     ))}
                   </div>
@@ -813,12 +849,12 @@ export const AdminDashboard: React.FC = () => {
               ))}
             </div>
 
-            <div className="pt-4 border-t border-slate-800 text-right">
+            <div className="pt-4 border-t-2 border-black text-right">
               <button
                 onClick={() => setSelectedAssessmentForQuestions(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold"
+                className="px-5 py-2.5 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] transition cursor-pointer"
               >
-                Close Manager
+                Close Question Manager
               </button>
             </div>
           </div>
@@ -827,27 +863,31 @@ export const AdminDashboard: React.FC = () => {
 
       {/* MODAL 3: Add Question Form */}
       {showQuestionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
-          <div className="w-full max-w-xl bg-slate-900 border border-slate-700 rounded-3xl p-6 shadow-2xl">
-            <h3 className="font-bold text-white text-base mb-4">Add Multiple Choice Question</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-xl bg-white border-2 border-black p-6 sm:p-8">
+            <h3 className="font-extrabold text-black text-base uppercase tracking-tight mb-4 border-b-2 border-black pb-2">
+              Add Multiple Choice Question
+            </h3>
 
-            <form onSubmit={handleAddQuestion} className="space-y-3 text-xs">
+            <form onSubmit={handleAddQuestion} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-300 font-medium mb-1">Question Text</label>
+                <label className="block text-black font-bold uppercase tracking-[0.12em] mb-1">Question Text</label>
                 <textarea
                   required
                   rows={3}
                   value={newQuestionText}
                   onChange={(e) => setNewQuestionText(e.target.value)}
                   placeholder="Enter problem statement..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-blue-500"
+                  className="w-full bg-white border-2 border-black p-3 text-black focus:outline-none font-sans"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 {newOptions.map((opt, oIdx) => (
                   <div key={oIdx}>
-                    <label className="block text-slate-300 font-medium mb-1">Option {String.fromCharCode(65 + oIdx)}</label>
+                    <label className="block text-black font-bold uppercase tracking-[0.12em] mb-1">
+                      Option {String.fromCharCode(65 + oIdx)}
+                    </label>
                     <input
                       type="text"
                       required
@@ -857,7 +897,7 @@ export const AdminDashboard: React.FC = () => {
                         copy[oIdx] = e.target.value;
                         setNewOptions(copy);
                       }}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none"
+                      className="w-full bg-white border-2 border-black px-3 py-2 text-black focus:outline-none"
                     />
                   </div>
                 ))}
@@ -865,11 +905,11 @@ export const AdminDashboard: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">Correct Answer</label>
+                  <label className="block text-black font-bold uppercase tracking-[0.12em] mb-1">Correct Answer</label>
                   <select
                     value={newCorrectAnswer}
                     onChange={(e) => setNewCorrectAnswer(parseInt(e.target.value, 10))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none"
+                    className="w-full bg-white border-2 border-black px-3 py-2 text-black focus:outline-none font-bold uppercase tracking-[0.12em]"
                   >
                     <option value={0}>Option A</option>
                     <option value={1}>Option B</option>
@@ -879,38 +919,38 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">Category / Domain</label>
+                  <label className="block text-black font-bold uppercase tracking-[0.12em] mb-1">Category / Domain</label>
                   <input
                     type="text"
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none"
+                    className="w-full bg-white border-2 border-black px-3 py-2 text-black focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-medium mb-1">Detailed Technical Explanation</label>
+                <label className="block text-black font-bold uppercase tracking-[0.12em] mb-1">Official Solution Breakdown</label>
                 <textarea
                   rows={2}
                   value={newExplanation}
                   onChange={(e) => setNewExplanation(e.target.value)}
                   placeholder="Explain why the answer is correct for candidate review..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none"
+                  className="w-full bg-white border-2 border-black p-3 text-black focus:outline-none font-sans"
                 />
               </div>
 
-              <div className="flex space-x-2 pt-2">
+              <div className="flex space-x-3 pt-3 border-t-2 border-black">
                 <button
                   type="button"
                   onClick={() => setShowQuestionModal(false)}
-                  className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl"
+                  className="flex-1 py-3 bg-white hover:bg-[#f0f0f0] text-black border-2 border-black font-bold uppercase tracking-[0.12em] text-xs transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl"
+                  className="flex-1 py-3 bg-black hover:bg-neutral-800 text-white border-2 border-black font-bold uppercase tracking-[0.12em] text-xs transition cursor-pointer"
                 >
                   Save Question
                 </button>
@@ -922,85 +962,424 @@ export const AdminDashboard: React.FC = () => {
 
       {/* MODAL 4: Policy Configuration Editor */}
       {editingPolicyAssessment && policyForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-3xl p-6 shadow-2xl">
-            <h3 className="font-bold text-white text-base mb-1">Assessment & Proctoring Policy</h3>
-            <p className="text-xs text-slate-400 mb-4">{editingPolicyAssessment.title}</p>
-
-            <div className="space-y-4 text-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 overflow-y-auto">
+          <div className="w-full max-w-2xl bg-white border-2 border-black p-6 sm:p-8 my-8">
+            <div className="flex items-center justify-between mb-4 border-b-2 border-black pb-3">
               <div>
-                <label className="block text-slate-300 font-medium mb-1">Assessment Duration (Minutes)</label>
-                <input
-                  type="number"
-                  min={5}
-                  max={180}
-                  value={policyForm.durationMinutes}
-                  onChange={(e) => setPolicyForm({ ...policyForm, durationMinutes: parseInt(e.target.value, 10) })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none"
-                />
+                <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-600">
+                  SECURITY DIRECTIVE EDITOR
+                </div>
+                <h3 className="font-extrabold text-black text-base uppercase tracking-tight">
+                  Assessment Security & Policy Controls
+                </h3>
+                <p className="text-xs text-neutral-600 font-mono">{editingPolicyAssessment.title}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPolicyAssessment(null)}
+                className="p-1 border-2 border-black hover:bg-black hover:text-white transition cursor-pointer font-bold text-sm px-2.5"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Quick Scenario Presets */}
+            <div className="mb-5 p-3.5 bg-[#f0f0f0] border-2 border-black">
+              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-black block mb-2">
+                One-Click Scenario Presets:
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPolicyForm({
+                      ...policyForm,
+                      policy: {
+                        ...policyForm.policy,
+                        aiUsage: 'allowed',
+                        aiPromptMonitoring: 'enabled',
+                        tabSwitchingPolicy: 'warn',
+                        externalResourceAccess: 'allowed',
+                        permittedWebsites: ['chatgpt.com', 'openai.com', 'claude.ai', 'gemini.google.com', 'perplexity.ai'],
+                        violationHandling: 'record_only',
+                        requireFullscreen: false,
+                        autoSubmitOnCriticalViolations: false
+                      }
+                    });
+                  }}
+                  className="p-3 bg-white hover:bg-black hover:text-white text-black border-2 border-black text-left text-xs transition cursor-pointer flex flex-col justify-between"
+                >
+                  <div className="font-extrabold uppercase tracking-tight flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" /> Scenario A: Prompt Engineering
+                  </div>
+                  <div className="text-[10px] text-neutral-600 font-mono mt-1">AI Allowed • Prompts Monitored • Record Only</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPolicyForm({
+                      ...policyForm,
+                      policy: {
+                        ...policyForm.policy,
+                        aiUsage: 'prohibited',
+                        aiPromptMonitoring: 'disabled',
+                        tabSwitchingPolicy: 'restrict',
+                        externalResourceAccess: 'restricted',
+                        permittedWebsites: [],
+                        violationHandling: 'terminate',
+                        requireFullscreen: true,
+                        autoSubmitOnCriticalViolations: true
+                      }
+                    });
+                  }}
+                  className="p-3 bg-white hover:bg-black hover:text-white text-black border-2 border-black text-left text-xs transition cursor-pointer flex flex-col justify-between"
+                >
+                  <div className="font-extrabold uppercase tracking-tight flex items-center gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 text-[#c90000]" /> Scenario B: DSA / Strict Coding
+                  </div>
+                  <div className="text-[10px] text-neutral-600 font-mono mt-1">AI Prohibited • Tabs Restrict • Terminate Action</div>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4 text-xs max-h-[55vh] overflow-y-auto pr-1">
+              {/* SECTION: Assessment Security Settings */}
+              <div className="p-4 bg-white border-2 border-black space-y-4">
+                <div className="font-bold text-black text-xs uppercase tracking-[0.12em] border-b-2 border-black pb-2 flex items-center gap-2">
+                  <Bot className="w-4 h-4 text-black" />
+                  <span>Configured Security Parameters</span>
+                </div>
+
+                {/* 1. AI Usage */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-black font-bold uppercase tracking-[0.12em]">1. AI Usage Policy</label>
+                    <span className="text-[10px] text-neutral-600 font-mono">Access to ChatGPT, Claude, etc.</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPolicyForm({
+                        ...policyForm,
+                        policy: { ...policyForm.policy, aiUsage: 'allowed' }
+                      })}
+                      className={`py-2.5 px-3 font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center justify-center gap-2 ${
+                        policyForm.policy.aiUsage === 'allowed'
+                          ? 'bg-black text-white'
+                          : 'bg-white text-black hover:bg-[#f0f0f0]'
+                      }`}
+                    >
+                      <Check className="w-3.5 h-3.5" /> Allowed
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPolicyForm({
+                        ...policyForm,
+                        policy: { ...policyForm.policy, aiUsage: 'prohibited' }
+                      })}
+                      className={`py-2.5 px-3 font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center justify-center gap-2 ${
+                        policyForm.policy.aiUsage === 'prohibited'
+                          ? 'bg-black text-white'
+                          : 'bg-white text-black hover:bg-[#f0f0f0]'
+                      }`}
+                    >
+                      <XCircle className="w-3.5 h-3.5" /> Prohibited
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. AI Prompt Monitoring */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-black font-bold uppercase tracking-[0.12em]">2. AI Prompt Monitoring</label>
+                    <span className="text-[10px] text-neutral-600 font-mono">Interception & audit log recording</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPolicyForm({
+                        ...policyForm,
+                        policy: { ...policyForm.policy, aiPromptMonitoring: 'enabled' }
+                      })}
+                      className={`py-2.5 px-3 font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center justify-center gap-2 ${
+                        policyForm.policy.aiPromptMonitoring === 'enabled'
+                          ? 'bg-black text-white'
+                          : 'bg-white text-black hover:bg-[#f0f0f0]'
+                      }`}
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Enabled (Capture Prompts)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPolicyForm({
+                        ...policyForm,
+                        policy: { ...policyForm.policy, aiPromptMonitoring: 'disabled' }
+                      })}
+                      className={`py-2.5 px-3 font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center justify-center gap-2 ${
+                        policyForm.policy.aiPromptMonitoring === 'disabled'
+                          ? 'bg-black text-white'
+                          : 'bg-white text-black hover:bg-[#f0f0f0]'
+                      }`}
+                    >
+                      Disabled
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Tab Switching Policy */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-black font-bold uppercase tracking-[0.12em]">3. Tab Switching Policy</label>
+                    <span className="text-[10px] text-neutral-600 font-mono">Window blur & focus handling</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { key: 'allowed', label: 'Allowed', desc: 'No penalty' },
+                      { key: 'warn', label: 'Warn', desc: 'Alert student' },
+                      { key: 'restrict', label: 'Restrict', desc: 'Strict violation' }
+                    ].map(opt => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setPolicyForm({
+                          ...policyForm,
+                          policy: { ...policyForm.policy, tabSwitchingPolicy: opt.key }
+                        })}
+                        className={`py-2 px-2 font-bold uppercase tracking-[0.12em] border-2 border-black text-center transition cursor-pointer ${
+                          policyForm.policy.tabSwitchingPolicy === opt.key
+                            ? 'bg-black text-white'
+                            : 'bg-white text-black hover:bg-[#f0f0f0]'
+                        }`}
+                      >
+                        <div className="text-xs">{opt.label}</div>
+                        <div className="text-[9px] opacity-70 mt-0.5">{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4. External Resource Access & Permitted Websites */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-black font-bold uppercase tracking-[0.12em]">4. External Resource Access</label>
+                    <span className="text-[10px] text-neutral-600 font-mono">Web navigation boundary</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setPolicyForm({
+                        ...policyForm,
+                        policy: { ...policyForm.policy, externalResourceAccess: 'allowed' }
+                      })}
+                      className={`py-2 px-3 font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer ${
+                        policyForm.policy.externalResourceAccess === 'allowed'
+                          ? 'bg-black text-white'
+                          : 'bg-white text-black hover:bg-[#f0f0f0]'
+                      }`}
+                    >
+                      Allowed (Open Web)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPolicyForm({
+                        ...policyForm,
+                        policy: { ...policyForm.policy, externalResourceAccess: 'restricted' }
+                      })}
+                      className={`py-2 px-3 font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer ${
+                        policyForm.policy.externalResourceAccess === 'restricted'
+                          ? 'bg-black text-white'
+                          : 'bg-white text-black hover:bg-[#f0f0f0]'
+                      }`}
+                    >
+                      Restricted (Allowlist Only)
+                    </button>
+                  </div>
+
+                  {/* Permitted Websites List Manager */}
+                  <div className="p-3 bg-[#f0f0f0] border-2 border-black">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-600 block mb-1.5">
+                      Configurable Permitted Websites / Allowlist:
+                    </span>
+                    
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. docs.python.org, chatgpt.com"
+                        value={newPermittedDomain}
+                        onChange={(e) => setNewPermittedDomain(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (newPermittedDomain.trim()) {
+                              const site = newPermittedDomain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+                              const current = Array.isArray(policyForm.policy.permittedWebsites) ? policyForm.policy.permittedWebsites : [];
+                              if (!current.includes(site)) {
+                                setPolicyForm({
+                                  ...policyForm,
+                                  policy: { ...policyForm.policy, permittedWebsites: [...current, site] }
+                                });
+                              }
+                              setNewPermittedDomain('');
+                            }
+                          }
+                        }}
+                        className="flex-1 bg-white border-2 border-black px-2.5 py-1.5 text-xs text-black focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newPermittedDomain.trim()) {
+                            const site = newPermittedDomain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+                            const current = Array.isArray(policyForm.policy.permittedWebsites) ? policyForm.policy.permittedWebsites : [];
+                            if (!current.includes(site)) {
+                              setPolicyForm({
+                                ...policyForm,
+                                policy: { ...policyForm.policy, permittedWebsites: [...current, site] }
+                              });
+                            }
+                            setNewPermittedDomain('');
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-black hover:bg-neutral-800 text-white font-bold uppercase tracking-[0.12em] border-2 border-black text-xs cursor-pointer"
+                      >
+                        Add
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {Array.isArray(policyForm.policy.permittedWebsites) && policyForm.policy.permittedWebsites.length > 0 ? (
+                        policyForm.policy.permittedWebsites.map((site: string, idx: number) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-black text-black text-[11px] font-mono font-bold"
+                          >
+                            <Globe className="w-3 h-3 text-black" />
+                            {site}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPolicyForm({
+                                  ...policyForm,
+                                  policy: {
+                                    ...policyForm.policy,
+                                    permittedWebsites: policyForm.policy.permittedWebsites.filter((_: any, i: number) => i !== idx)
+                                  }
+                                });
+                              }}
+                              className="text-black hover:text-[#c90000] ml-1 font-bold cursor-pointer"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[10px] text-neutral-500 font-mono italic">No external domains permitted (strict kiosk).</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. Violation Handling */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-black font-bold uppercase tracking-[0.12em]">5. Violation Handling Policy</label>
+                    <span className="text-[10px] text-neutral-600 font-mono">Infraction policy actions</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { key: 'record_only', label: 'Record Only', desc: 'Audit log only' },
+                      { key: 'warn', label: 'Warn Candidate', desc: 'Display alerts' },
+                      { key: 'terminate', label: 'Terminate', desc: 'Auto-submit on limit' }
+                    ].map(opt => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setPolicyForm({
+                          ...policyForm,
+                          policy: { ...policyForm.policy, violationHandling: opt.key }
+                        })}
+                        className={`py-2 px-2 font-bold uppercase tracking-[0.12em] border-2 border-black text-center transition cursor-pointer ${
+                          policyForm.policy.violationHandling === opt.key
+                            ? 'bg-black text-white'
+                            : 'bg-white text-black hover:bg-[#f0f0f0]'
+                        }`}
+                      >
+                        <div className="text-xs">{opt.label}</div>
+                        <div className="text-[9px] opacity-70 mt-0.5">{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Face Absence Timeout (Seconds before warning)</label>
-                <input
-                  type="number"
-                  min={3}
-                  max={30}
-                  value={policyForm.policy.faceAbsenceTimeoutSec || 7}
-                  onChange={(e) => setPolicyForm({
-                    ...policyForm,
-                    policy: { ...policyForm.policy, faceAbsenceTimeoutSec: parseInt(e.target.value, 10) }
-                  })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none"
-                />
-              </div>
+              {/* General Session Rules */}
+              <div className="p-4 bg-[#f0f0f0] border-2 border-black space-y-3">
+                <span className="font-bold text-black text-xs uppercase tracking-[0.12em] block border-b-2 border-black pb-2">
+                  Session & Computer Vision Rules
+                </span>
 
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Max Total Violations Allowed Before Action</label>
-                <input
-                  type="number"
-                  min={2}
-                  max={15}
-                  value={policyForm.policy.maxTotalViolations || 6}
-                  onChange={(e) => setPolicyForm({
-                    ...policyForm,
-                    policy: { ...policyForm.policy, maxTotalViolations: parseInt(e.target.value, 10) }
-                  })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none"
-                />
-              </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-black font-bold uppercase tracking-[0.12em] mb-1">Duration (Minutes)</label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={180}
+                      value={policyForm.durationMinutes}
+                      onChange={(e) => setPolicyForm({ ...policyForm, durationMinutes: parseInt(e.target.value, 10) })}
+                      className="w-full bg-white border-2 border-black px-3 py-2 text-black focus:outline-none"
+                    />
+                  </div>
 
-              <div className="pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
+                  <div>
+                    <label className="block text-black font-bold uppercase tracking-[0.12em] mb-1">Max Total Violations</label>
+                    <input
+                      type="number"
+                      min={2}
+                      max={20}
+                      value={policyForm.policy.maxTotalViolations || 5}
+                      onChange={(e) => setPolicyForm({
+                        ...policyForm,
+                        policy: { ...policyForm.policy, maxTotalViolations: parseInt(e.target.value, 10) }
+                      })}
+                      className="w-full bg-white border-2 border-black px-3 py-2 text-black focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-black font-bold uppercase tracking-[0.12em] mb-1">Face Absence Timeout (Seconds)</label>
                   <input
-                    type="checkbox"
-                    checked={policyForm.policy.autoSubmitOnCriticalViolations || false}
+                    type="number"
+                    min={3}
+                    max={30}
+                    value={policyForm.policy.faceAbsenceTimeoutSec || 7}
                     onChange={(e) => setPolicyForm({
                       ...policyForm,
-                      policy: { ...policyForm.policy, autoSubmitOnCriticalViolations: e.target.checked }
+                      policy: { ...policyForm.policy, faceAbsenceTimeoutSec: parseInt(e.target.value, 10) }
                     })}
-                    className="rounded border-slate-700 bg-slate-950 text-blue-600"
+                    className="w-full bg-white border-2 border-black px-3 py-2 text-black focus:outline-none"
                   />
-                  <span className="text-slate-300">Auto-submit assessment if critical violation limit reached</span>
-                </label>
+                </div>
               </div>
+            </div>
 
-              <div className="flex space-x-2 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setEditingPolicyAssessment(null)}
-                  className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSavePolicy}
-                  className="flex-1 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl"
-                >
-                  Save Policy Changes
-                </button>
-              </div>
+            <div className="flex space-x-3 pt-4 border-t-2 border-black mt-5">
+              <button
+                type="button"
+                onClick={() => setEditingPolicyAssessment(null)}
+                className="flex-1 py-3 bg-white hover:bg-[#f0f0f0] text-black border-2 border-black font-bold uppercase tracking-[0.12em] text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSavePolicy}
+                className="flex-1 py-3 bg-black hover:bg-neutral-800 text-white border-2 border-black font-bold uppercase tracking-[0.12em] text-xs transition cursor-pointer"
+              >
+                Save & Enforce Settings
+              </button>
             </div>
           </div>
         </div>

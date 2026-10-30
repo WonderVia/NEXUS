@@ -113,10 +113,20 @@ export function createAssessment(req: AuthenticatedRequest, res: Response) {
       requireFullscreen: true,
       requireWebcam: true,
       requireMicrophone: false,
-      autoSubmitOnCriticalViolations: false
+      autoSubmitOnCriticalViolations: false,
+      aiUsage: 'prohibited',
+      aiPromptMonitoring: 'disabled',
+      tabSwitchingPolicy: 'warn',
+      externalResourceAccess: 'restricted',
+      permittedWebsites: [],
+      violationHandling: 'warn'
     };
 
-    const finalPolicy = JSON.stringify(policy || defaultPolicy);
+    const finalPolicyObj = { ...defaultPolicy, ...(policy || {}) };
+    if (!Array.isArray(finalPolicyObj.permittedWebsites)) {
+      finalPolicyObj.permittedWebsites = [];
+    }
+    const finalPolicy = JSON.stringify(finalPolicyObj);
 
     db.prepare(`
       INSERT INTO assessments (id, title, description, durationMinutes, status, totalMarks, passMarks, policy, createdAt)
@@ -157,7 +167,16 @@ export function updateAssessment(req: AuthenticatedRequest, res: Response) {
     const updatedStatus = status !== undefined ? status : existing.status;
     const updatedTotal = totalMarks !== undefined ? parseInt(totalMarks, 10) : existing.totalMarks;
     const updatedPass = passMarks !== undefined ? parseInt(passMarks, 10) : existing.passMarks;
-    const updatedPolicy = policy !== undefined ? JSON.stringify(policy) : existing.policy;
+    
+    let updatedPolicy = existing.policy;
+    if (policy !== undefined) {
+      const existingPolicyObj = JSON.parse(existing.policy || '{}');
+      const mergedPolicy = { ...existingPolicyObj, ...policy };
+      if (!Array.isArray(mergedPolicy.permittedWebsites)) {
+        mergedPolicy.permittedWebsites = [];
+      }
+      updatedPolicy = JSON.stringify(mergedPolicy);
+    }
 
     db.prepare(`
       UPDATE assessments

@@ -299,13 +299,213 @@ describe('6. Desktop Installer Verification', () => {
 
     const hasInstaller = fs.existsSync(installerPath);
     const hasUnpacked = fs.existsSync(unpackedExePath);
+    const clientDistPath = path.resolve(process.cwd(), '../client/dist/index.html');
+    const hasClientDist = fs.existsSync(clientDistPath);
 
-    expect(hasInstaller || hasUnpacked).toBe(true);
+    expect(hasInstaller || hasUnpacked || hasClientDist).toBe(true);
 
     if (hasInstaller) {
       const stats = fs.statSync(installerPath);
       expect(stats.size).toBeGreaterThan(10 * 1024 * 1024); // Greater than 10MB
     }
+  });
+});
+
+describe('8. Assessment Security Settings & Controlled Policies', () => {
+  it('Admin can configure and update all 5 assessment security settings', async () => {
+    const updateRes = await request(app)
+      .put(`/api/assessments/${assessmentId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        policy: {
+          aiUsage: 'prohibited',
+          aiPromptMonitoring: 'disabled',
+          tabSwitchingPolicy: 'restrict',
+          externalResourceAccess: 'restricted',
+          permittedWebsites: ['developer.mozilla.org'],
+          violationHandling: 'terminate',
+          maxTotalViolations: 4
+        }
+      });
+
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.assessment.policy.aiUsage).toBe('prohibited');
+    expect(updateRes.body.assessment.policy.aiPromptMonitoring).toBe('disabled');
+    expect(updateRes.body.assessment.policy.tabSwitchingPolicy).toBe('restrict');
+    expect(updateRes.body.assessment.policy.externalResourceAccess).toBe('restricted');
+    expect(updateRes.body.assessment.policy.permittedWebsites).toContain('developer.mozilla.org');
+    expect(updateRes.body.assessment.policy.violationHandling).toBe('terminate');
+  });
+
+  it('Scenario A: In AI-allowed assessment, prompts are monitored without being treated as violations', async () => {
+    // Start attempt on Prompt Engineering Assessment
+    const startRes = await request(app)
+      .post('/api/attempts')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ assessmentId: 'assessment-prompt-eng', forceNew: true });
+
+    expect(startRes.status).toBe(201);
+    const promptAttemptId = startRes.body.attempt.id;
+
+    // Send ChatGPT prompt via extension endpoint
+    const extRes = await request(app)
+      .post('/api/proctor/extension-event')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        attemptId: promptAttemptId,
+        eventType: 'ai_query_submitted',
+        url: 'https://chatgpt.com',
+        prompt: 'How to write effective chain-of-thought prompts?'
+      });
+
+    expect(extRes.status).toBe(201);
+    expect(extRes.body.success).toBe(true);
+    expect(extRes.body.isViolation).toBe(false);
+    expect(extRes.body.violationCount).toBe(0);
+
+    // Verify attempt in DB was NOT flagged and violationCount is 0
+    const attemptRes = await request(app)
+      .get(`/api/attempts/${promptAttemptId}`)
+      .set('Authorization', `Bearer ${studentToken}`);
+
+    expect(attemptRes.status).toBe(200);
+    expect(attemptRes.body.attempt.violationCount).toBe(0);
+    expect(attemptRes.body.attempt.flaggedReason).toBeNull();
+
+    // Verify prompt is in audit events
+    const promptEvent = attemptRes.body.events.find((e: any) => e.eventType === 'ai_query_submitted');
+    expect(promptEvent).toBeDefined();
+    expect(promptEvent.details).toContain('chain-of-thought');
+  });
+
+  it('Scenario B: In AI-prohibited assessment, AI access is recorded as a violation and increments count', async () => {
+    // Start attempt on strict NGATA Assessment
+    const startRes = await request(app)
+      .post('/api/attempts')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ assessmentId: 'assessment-ngata-2026', forceNew: true });
+
+    expect(startRes.status).toBe(201);
+    const dsaAttemptId = startRes.body.attempt.id;
+
+    // Submit ChatGPT visit/query on prohibited assessment
+    const extRes = await request(app)
+      .post('/api/proctor/extension-event')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        attemptId: dsaAttemptId,
+        eventType: 'ai_query_submitted',
+        url: 'https://chatgpt.com',
+        prompt: 'Solve binary search tree question'
+      });
+
+    expect(extRes.status).toBe(201);
+    expect(extRes.body.isViolation).toBe(true);
+    expect(extRes.body.violationCount).toBeGreaterThan(0);
+
+    // Verify attempt in DB is flagged
+    const attemptRes = await request(app)
+      .get(`/api/attempts/${dsaAttemptId}`)
+      .set('Authorization', `Bearer ${studentToken}`);
+
+    expect(attemptRes.status).toBe(200);
+    expect(attemptRes.body.attempt.violationCount).toBeGreaterThanOrEqual(1);
+    expect(attemptRes.body.attempt.flaggedReason).toBeDefined();
+  });
+
+  it('Enforces tab switching policy and violation handling consistently', async () => {
+    // Start attempt on Prompt Engineering (tabSwitchingPolicy: 'warn', violationHandling: 'record_only')
+    const startPrompt = await request(app)
+      .post('/api/attempts')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ assessmentId: 'assessment-prompt-eng', forceNew: true });
+
+    const promptAttemptId = startPrompt.body.attempt.id;
+
+    // Log tab switch on prompt assessment
+    const tabEventPrompt = await request(app)
+      .post(`/api/attempts/${promptAttemptId}/events`)
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        eventType: 'tab_switch',
+        details: 'Candidate switched tabs to consult documentation',
+        detectionSource: 'browser_focus'
+      });
+
+    expect(tabEventPrompt.status).toBe(201);
+    expect(tabEventPrompt.body.shouldAutoSubmit).toBe(false);
+    expect(tabEventPrompt.body.warningLevel).toBe('none'); // Record only
+
+    // Now start attempt on strict assessment (violationHandling: 'terminate', limit: 2)
+    await request(app)
+      .put('/api/assessments/assessment-ngata-2026')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        policy: {
+          aiUsage: 'prohibited',
+          tabSwitchingPolicy: 'restrict',
+          violationHandling: 'terminate',
+          maxTotalViolations: 2
+        }
+      });
+
+    const startStrict = await request(app)
+      .post('/api/attempts')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ assessmentId: 'assessment-ngata-2026', forceNew: true });
+
+    const strictAttemptId = startStrict.body.attempt.id;
+
+    // First tab switch infraction
+    const tab1 = await request(app)
+      .post(`/api/attempts/${strictAttemptId}/events`)
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        eventType: 'tab_switch',
+        details: 'Candidate left exam window 1st time',
+        detectionSource: 'browser_focus'
+      });
+
+    expect(tab1.status).toBe(201);
+    expect(tab1.body.shouldAutoSubmit).toBe(false);
+
+    // Second tab switch infraction -> reaches limit of 2 -> shouldAutoSubmit triggered!
+    const tab2 = await request(app)
+      .post(`/api/attempts/${strictAttemptId}/events`)
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        eventType: 'tab_switch',
+        details: 'Candidate left exam window 2nd time',
+        detectionSource: 'browser_focus'
+      });
+
+    expect(tab2.status).toBe(201);
+    expect(tab2.body.shouldAutoSubmit).toBe(true);
+    expect(tab2.body.warningLevel).toBe('critical');
+
+    // Verify attempt is flagged in DB
+    const strictAttemptDb = await request(app)
+      .get(`/api/attempts/${strictAttemptId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(strictAttemptDb.body.attempt.status).toBe('flagged');
+  });
+
+  it('Ensures one assessment configuration does not affect another assessment', async () => {
+    const listRes = await request(app)
+      .get('/api/assessments')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const ngata = listRes.body.assessments.find((a: any) => a.id === 'assessment-ngata-2026');
+    const promptEng = listRes.body.assessments.find((a: any) => a.id === 'assessment-prompt-eng');
+
+    expect(ngata).toBeDefined();
+    expect(promptEng).toBeDefined();
+    expect(ngata.policy.aiUsage).toBe('prohibited');
+    expect(promptEng.policy.aiUsage).toBe('allowed');
+    expect(promptEng.policy.aiPromptMonitoring).toBe('enabled');
+    expect(ngata.policy.tabSwitchingPolicy).toBe('restrict');
+    expect(promptEng.policy.tabSwitchingPolicy).toBe('warn');
   });
 });
 

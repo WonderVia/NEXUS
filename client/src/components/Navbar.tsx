@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, ShieldAlert, Maximize, Minimize2, LogOut, User as UserIcon, Monitor } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+import { Shield, ShieldAlert, Maximize, Minimize2, LogOut, Monitor, Sun, Moon } from 'lucide-react';
 
 interface NavbarProps {
   onNavigateHome?: () => void;
@@ -9,6 +10,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ onNavigateHome, isAssessmentActive }) => {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const isElectron = Boolean(window.electronAPI?.isElectron);
 
@@ -41,81 +43,106 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigateHome, isAssessmentActi
   };
 
   return (
-    <header className="bg-[#0b1329]/90 backdrop-blur-md border-b border-slate-800/80 sticky top-0 z-40 select-none">
+    <header className="bg-white border-b-2 border-black sticky top-0 z-40 select-none">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
         {/* Brand / Logo */}
         <div 
           onClick={!isAssessmentActive ? onNavigateHome : undefined} 
-          className={`flex items-center space-x-3 ${!isAssessmentActive ? 'cursor-pointer hover:opacity-90' : 'cursor-default'}`}
+          className={`flex items-center space-x-3.5 ${!isAssessmentActive ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
         >
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Shield className="w-6 h-6 text-white" />
+          <div className="relative w-9 h-9 bg-black flex items-center justify-center text-white border-2 border-black">
+            <Shield className="w-5 h-5 text-white" />
+            <div className="absolute top-0 right-0 w-2 h-2 bg-[#c90000]" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
+              <span className="font-extrabold text-lg tracking-tighter text-black uppercase">
                 WUElev8
               </span>
-              <span className="text-xs px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              <span className="text-[11px] px-2 py-0.5 font-bold uppercase tracking-[0.12em] bg-black text-white">
                 Proctor Browser
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-medium">Next-Gen Assessment & Integrity Shield</p>
+            <p className="text-[11px] text-neutral-600 font-medium tracking-tight">Next-Gen Assessment & Integrity Shield</p>
           </div>
         </div>
 
         {/* Center / Security Indicator */}
-        <div className="hidden md:flex items-center space-x-2 bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-full text-xs text-slate-300">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-          <span>Environment: <strong className="text-slate-100">{isElectron ? 'Secure Electron Sandbox' : 'Web Browser'}</strong></span>
+        <div className="hidden md:flex items-center space-x-2.5 bg-[#f0f0f0] border-2 border-black px-3.5 py-1 text-xs text-black">
+          <div className="w-2 h-2 bg-black" />
+          <span className="tracking-tight uppercase text-[11px] font-bold">
+            Environment: <strong className="font-extrabold">{isElectron ? 'Secure Electron Sandbox' : 'Web Browser'}</strong>
+          </span>
           {isAssessmentActive && (
-            <span className="ml-2 pl-2 border-l border-slate-700 text-amber-400 font-semibold flex items-center gap-1">
+            <span className="ml-2 pl-2 border-l-2 border-black text-[#c90000] font-bold flex items-center gap-1 uppercase tracking-[0.12em]">
               <ShieldAlert className="w-3.5 h-3.5" /> Exam Locked
             </span>
           )}
         </div>
 
-        {/* User profile & action controls */}
-        {user ? (
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={toggleFullscreen}
-              title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-              className="p-2 text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 rounded-lg border border-slate-700/60 transition"
-            >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-            </button>
+        {/* Action Controls & Profile */}
+        <div className="flex items-center space-x-2.5">
+          {/* Dark / Light Screen Mode Toggle */}
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Screen Mode'}
+            aria-label="Toggle dark screen mode"
+            className="p-2 text-black bg-white hover:bg-black hover:text-white border-2 border-black transition cursor-pointer flex items-center gap-1.5"
+          >
+            {theme === 'dark' ? (
+              <>
+                <Sun className="w-4 h-4 text-black" />
+                <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-[0.12em]">Light</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-4 h-4 text-black" />
+                <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-[0.12em]">Dark</span>
+              </>
+            )}
+          </button>
 
-            <div className="flex items-center space-x-2 pl-2 border-l border-slate-800">
-              <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-blue-400 font-bold text-xs">
-                {user.name.charAt(0)}
-              </div>
-              <div className="hidden sm:block text-left text-xs">
-                <div className="font-medium text-slate-200">{user.name}</div>
-                <div className="text-[10px] text-slate-400 capitalize flex items-center gap-1">
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${user.role === 'admin' ? 'bg-purple-400' : 'bg-blue-400'}`}></span>
-                  {user.role}
+          {user ? (
+            <>
+              <button
+                onClick={toggleFullscreen}
+                title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+                className="p-2 text-black bg-white hover:bg-black hover:text-white border-2 border-black transition cursor-pointer"
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+              </button>
+
+              <div className="flex items-center space-x-2 pl-2.5 border-l-2 border-black">
+                <div className="w-8 h-8 bg-black border-2 border-black flex items-center justify-center text-white font-bold text-xs uppercase">
+                  {user.name.charAt(0)}
+                </div>
+                <div className="hidden sm:block text-left text-xs">
+                  <div className="font-bold text-black uppercase tracking-tight">{user.name}</div>
+                  <div className="text-[10px] text-neutral-600 uppercase tracking-[0.12em] font-semibold flex items-center gap-1.5">
+                    <span className={`inline-block w-1.5 h-1.5 ${user.role === 'admin' ? 'bg-[#c90000]' : 'bg-black'}`} />
+                    {user.role}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {!isAssessmentActive && (
-              <button
-                onClick={logout}
-                title="Sign Out"
-                className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center space-x-2 text-xs text-slate-400">
-            <Monitor className="w-4 h-4 text-blue-400" />
-            <span>WUElev8 Hackathon Edition</span>
-          </div>
-        )}
+              {!isAssessmentActive && (
+                <button
+                  onClick={logout}
+                  title="Sign Out"
+                  className="p-2 text-black bg-white hover:bg-[#c90000] hover:text-white border-2 border-black transition cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="hidden sm:flex items-center space-x-2 text-xs font-bold uppercase tracking-[0.12em] text-neutral-600 pl-2 border-l-2 border-black">
+              <Monitor className="w-4 h-4 text-black" />
+              <span>WUElev8 Hackathon Edition</span>
+            </div>
+          )}
+        </div>
 
       </div>
     </header>

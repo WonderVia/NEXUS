@@ -15,6 +15,14 @@ export interface ProctoringPolicy {
   requireWebcam: boolean;
   requireMicrophone: boolean;
   autoSubmitOnCriticalViolations: boolean;
+
+  // Assessment Security Settings (Admin Configurable)
+  aiUsage?: 'allowed' | 'prohibited';
+  aiPromptMonitoring?: 'enabled' | 'disabled';
+  tabSwitchingPolicy?: 'allowed' | 'warn' | 'restrict';
+  externalResourceAccess?: 'allowed' | 'restricted';
+  permittedWebsites?: string[];
+  violationHandling?: 'record_only' | 'warn' | 'terminate';
 }
 
 export interface Assessment {
@@ -135,7 +143,13 @@ declare global {
         error?: string;
       }>;
       setExamMode: (active: boolean) => Promise<boolean>;
-      setExamPolicy?: (policy: { permittedExternalDomains?: string[] }) => Promise<boolean>;
+      setExamPolicy?: (policy: {
+        permittedExternalDomains?: string[];
+        aiUsage?: 'allowed' | 'prohibited';
+        externalResourceAccess?: 'allowed' | 'restricted';
+        tabSwitchingPolicy?: 'allowed' | 'warn' | 'restrict';
+        violationHandling?: 'record_only' | 'warn' | 'terminate';
+      }) => Promise<boolean>;
       setActiveSessionInfo?: (sessionInfo: { attemptId?: string; token?: string }) => Promise<boolean>;
       onWindowBlur: (callback: (data: { timestamp: number }) => void) => () => void;
       onWindowFocus: (callback: (data: { timestamp: number; duration: number }) => void) => () => void;

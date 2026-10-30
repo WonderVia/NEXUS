@@ -24,7 +24,6 @@ export const AssessmentResultPage: React.FC<AssessmentResultPageProps> = ({ asse
   useEffect(() => {
     async function loadResults() {
       try {
-        // If not passed in props, fetch latest attempt for this assessment
         if (!scoreData && assessment.userAttemptId) {
           const attRes = await attemptsAPI.getById(assessment.userAttemptId);
           setScoreData(attRes.attempt);
@@ -35,11 +34,9 @@ export const AssessmentResultPage: React.FC<AssessmentResultPageProps> = ({ asse
           }
         }
 
-        // Fetch questions in review mode (includes correct answers & explanations!)
         const qRes = await questionsAPI.getByAssessment(assessment.id);
         setQuestions(qRes.questions);
 
-        // Fire festive confetti if score >= 40%
         const finalPct = resultData?.percentage ?? assessment.userPercentage ?? 0;
         if (finalPct >= assessment.passMarks) {
           confetti({
@@ -64,13 +61,13 @@ export const AssessmentResultPage: React.FC<AssessmentResultPageProps> = ({ asse
   const isPassed = percentage >= assessment.passMarks;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-white text-black">
       
       {/* Top Navigation */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-8 pb-4 border-b-2 border-black">
         <button
           onClick={onBack}
-          className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 transition"
+          className="text-xs font-bold uppercase tracking-[0.12em] text-black hover:text-[#c90000] flex items-center gap-1.5 transition cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" /> Return to Student Dashboard
         </button>
@@ -78,7 +75,7 @@ export const AssessmentResultPage: React.FC<AssessmentResultPageProps> = ({ asse
         {onRetake && (
           <button
             onClick={onRetake}
-            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-blue-500/20 transition cursor-pointer"
+            className="px-4 py-2 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Retake Assessment</span>
@@ -86,67 +83,64 @@ export const AssessmentResultPage: React.FC<AssessmentResultPageProps> = ({ asse
         )}
       </div>
 
-      {/* Main Scorecard Banner */}
-      <div className={`relative overflow-hidden rounded-3xl border p-8 mb-8 backdrop-blur-xl shadow-2xl ${
-        isPassed
-          ? 'bg-gradient-to-tr from-emerald-950/60 via-slate-900/80 to-blue-950/40 border-emerald-500/30'
-          : 'bg-gradient-to-tr from-amber-950/40 via-slate-900/80 to-slate-900/80 border-amber-500/30'
-      }`}>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 relative z-10">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`text-xs px-3 py-1 rounded-full font-bold uppercase tracking-wider ${
-                isPassed ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+      {/* Main Scorecard Banner (12-Column Swiss Grid) */}
+      <div className="border-2 border-black bg-white p-6 sm:p-10 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          
+          <div className="lg:col-span-8">
+            <div className="flex items-center gap-2 mb-3">
+              <span className={`text-[11px] px-2.5 py-1 font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 ${
+                isPassed ? 'bg-black text-white' : 'bg-black text-white'
               }`}>
-                {isPassed ? 'Assessment Cleared' : 'Assessment Completed'}
+                <span className={`w-2 h-2 ${isPassed ? 'bg-white' : 'bg-[#c90000]'}`}></span>
+                {isPassed ? 'Assessment Cleared' : 'Assessment Failed'}
               </span>
-              <span className="text-xs text-slate-400 font-mono">
-                Authoritative Backend Scored
+              <span className="text-[11px] font-mono text-neutral-600 uppercase font-bold tracking-[0.12em]">
+                Authoritative Server Evaluation
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+
+            <h1 className="text-3xl sm:text-5xl font-extrabold text-black uppercase tracking-tighter leading-[0.95] mb-2">
               {assessment.title}
             </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Test answers evaluated securely against official database answer keys.
+            <p className="text-xs text-neutral-600 font-medium">
+              Candidate answers scored authoritatively against official database solution keys.
             </p>
           </div>
 
-          {/* Big Score Circle */}
-          <div className="flex items-center space-x-4 bg-slate-950/60 border border-slate-800/80 p-4 rounded-2xl shrink-0">
-            <div className="text-right">
-              <div className="text-[11px] text-slate-400 uppercase font-bold">Your Score</div>
-              <div className="text-3xl font-black text-white">{percentage}%</div>
-              <div className="text-[11px] text-slate-400 font-mono">{score} / {totalPossible} Marks</div>
+          {/* Big Score Box */}
+          <div className="lg:col-span-4 border-2 border-black bg-[#f0f0f0] p-6 text-center">
+            <div className="text-[11px] text-neutral-600 uppercase font-bold tracking-[0.12em]">Final Score</div>
+            <div className="text-6xl sm:text-7xl font-black text-black tracking-tighter leading-none my-1">
+              {percentage}%
             </div>
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-white shadow-lg ${
-              isPassed ? 'bg-emerald-600 shadow-emerald-500/25' : 'bg-amber-600 shadow-amber-500/25'
-            }`}>
-              <Award className="w-6 h-6" />
+            <div className="text-xs font-mono font-bold text-black border-t-2 border-black pt-2 mt-2">
+              {score} / {totalPossible} Marks
             </div>
           </div>
+
         </div>
       </div>
 
       {/* Question Review Section */}
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-blue-400" />
-            Comprehensive Question Review & Explanations
-          </h2>
-          <span className="text-xs text-slate-400">
+        <div className="flex items-center justify-between border-b-2 border-black pb-3">
+          <div className="text-xs font-bold uppercase tracking-[0.12em] text-black flex items-center gap-2">
+            <span className="w-2 h-2 bg-black inline-block"></span>
+            <span>02 / OFFICIAL ANSWER EVALUATION & TECHNICAL EXPLANATIONS</span>
+          </div>
+          <span className="text-xs font-mono font-bold text-black">
             {questions.length} Questions Evaluated
           </span>
         </div>
 
         {isLoading ? (
-          <div className="p-8 text-center text-slate-400 text-xs">
-            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-            Loading answer explanations...
+          <div className="p-12 text-center text-xs font-bold uppercase tracking-[0.12em] border-2 border-black bg-[#f0f0f0]">
+            <div className="w-6 h-6 border-2 border-black border-t-transparent animate-spin mx-auto mb-3"></div>
+            Loading official review data...
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-5">
             {questions.map((q, idx) => {
               const studentChoice = savedAnswers.get(q.id);
               const isCorrect = studentChoice !== undefined && studentChoice === q.correctAnswer;
@@ -155,85 +149,86 @@ export const AssessmentResultPage: React.FC<AssessmentResultPageProps> = ({ asse
               return (
                 <div
                   key={q.id}
-                  className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-md"
+                  className="border-2 border-black bg-white p-6"
                 >
-                  <div className="flex items-start justify-between gap-4 mb-3">
+                  <div className="flex items-start justify-between gap-4 mb-4 border-b-2 border-black pb-3">
                     <div className="flex items-center space-x-2">
-                      <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-slate-800 text-slate-300">
-                        Q{idx + 1}
+                      <span className="text-xs px-2 py-0.5 font-bold uppercase tracking-[0.12em] bg-black text-white">
+                        Q{idx + 1 < 10 ? `0${idx + 1}` : idx + 1}
                       </span>
-                      <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-500/10 text-blue-400">
+                      <span className="text-xs px-2 py-0.5 font-bold uppercase tracking-[0.12em] bg-[#f0f0f0] border-2 border-black text-black">
                         {q.category}
                       </span>
                     </div>
 
                     {/* Correctness Chip */}
                     {studentChoice === undefined ? (
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.12em] px-2.5 py-0.5 border-2 border-black bg-[#f0f0f0] text-black">
                         Unattempted
                       </span>
                     ) : isCorrect ? (
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.12em] px-2.5 py-0.5 bg-black text-white flex items-center gap-1.5">
                         <CheckCircle2 className="w-3.5 h-3.5" /> Correct (+5)
                       </span>
                     ) : (
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1">
-                        <XCircle className="w-3.5 h-3.5" /> Incorrect (0)
+                      <span className="text-[11px] font-bold uppercase tracking-[0.12em] px-2.5 py-0.5 border-2 border-[#c90000] bg-[#f0f0f0] text-black flex items-center gap-1.5">
+                        <span className="w-2 h-2 bg-[#c90000]"></span> Incorrect (0)
                       </span>
                     )}
                   </div>
 
-                  <p className="text-sm font-medium text-white mb-4 leading-relaxed">
+                  <p className="text-base font-bold text-black mb-5 leading-snug">
                     {q.questionText}
                   </p>
 
                   {/* Options List */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
                     {q.options.map((opt, optIdx) => {
                       const isCandidateChoice = studentChoice === optIdx;
                       const isCorrectChoice = q.correctAnswer === optIdx;
 
-                      let style = 'bg-slate-950/40 border-slate-800/80 text-slate-400';
+                      let style = 'bg-white border-2 border-black text-black';
                       if (isCorrectChoice) {
-                        style = 'bg-emerald-950/30 border-emerald-500/60 text-emerald-300 font-semibold';
+                        style = 'bg-black text-white border-2 border-black font-bold';
                       } else if (isCandidateChoice && !isCorrectChoice) {
-                        style = 'bg-red-950/30 border-red-500/60 text-red-300 line-through';
+                        style = 'bg-[#f0f0f0] border-2 border-[#c90000] text-black line-through';
                       }
 
                       return (
                         <div
                           key={optIdx}
-                          className={`p-3 rounded-xl border text-xs flex items-center justify-between ${style}`}
+                          className={`p-3 text-xs flex items-center justify-between ${style}`}
                         >
-                          <div className="flex items-center space-x-2">
-                            <span className="w-5 h-5 rounded-md bg-slate-800 flex items-center justify-center font-bold text-[10px]">
+                          <div className="flex items-center space-x-2.5">
+                            <span className={`w-5 h-5 flex items-center justify-center font-bold text-[11px] border ${
+                              isCorrectChoice ? 'border-white bg-black text-white' : 'border-black bg-[#f0f0f0] text-black'
+                            }`}>
                               {String.fromCharCode(65 + optIdx)}
                             </span>
                             <span>{opt}</span>
                           </div>
-                          {isCorrectChoice && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
-                          {isCandidateChoice && !isCorrectChoice && <XCircle className="w-4 h-4 text-red-400 shrink-0" />}
+                          {isCorrectChoice && <CheckCircle2 className="w-4 h-4 text-white shrink-0" />}
+                          {isCandidateChoice && !isCorrectChoice && <span className="w-2 h-2 bg-[#c90000] shrink-0" />}
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Explanation Toggle */}
+                  {/* Technical Explanation Toggle */}
                   {q.explanation && (
-                    <div className="border-t border-slate-800/80 pt-3">
+                    <div className="border-t-2 border-black pt-3">
                       <button
                         onClick={() => setExpandedExplanation(isExpanded ? null : q.id)}
-                        className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-semibold transition"
+                        className="text-xs font-bold uppercase tracking-[0.12em] text-black hover:text-[#c90000] underline flex items-center gap-1.5 transition cursor-pointer"
                       >
                         <HelpCircle className="w-3.5 h-3.5" />
-                        <span>{isExpanded ? 'Hide Technical Explanation' : 'View Technical Explanation'}</span>
-                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        <span>{isExpanded ? '[-] Hide Solution Breakdown' : '[+] View Solution Breakdown'}</span>
                       </button>
 
                       {isExpanded && (
-                        <div className="mt-2.5 p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300 leading-relaxed animate-in fade-in duration-150">
-                          <strong className="text-blue-300 block mb-1">Official Solution Breakdown:</strong>
-                          {q.explanation}
+                        <div className="mt-3 p-4 bg-[#f0f0f0] border-2 border-black text-xs text-black leading-relaxed">
+                          <strong className="block mb-1.5 uppercase tracking-[0.12em] font-bold">Official Technical Breakdown:</strong>
+                          <p>{q.explanation}</p>
                         </div>
                       )}
                     </div>
@@ -247,22 +242,20 @@ export const AssessmentResultPage: React.FC<AssessmentResultPageProps> = ({ asse
       </div>
 
       {/* Bottom Actions Bar */}
-      <div className="mt-10 pt-6 border-t border-slate-800/80 flex items-center justify-between">
+      <div className="mt-10 pt-6 border-t-2 border-black flex items-center justify-between">
         <button
           onClick={onBack}
-          className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl text-xs font-semibold flex items-center gap-2 transition"
+          className="px-5 py-2.5 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] transition cursor-pointer"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Dashboard</span>
+          Return to Dashboard
         </button>
 
         {onRetake && (
           <button
             onClick={onRetake}
-            className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-500/25 transition cursor-pointer"
+            className="px-5 py-2.5 bg-white hover:bg-black hover:text-white text-black border-2 border-black text-xs font-bold uppercase tracking-[0.12em] transition cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Retake Assessment</span>
+            Retake Test
           </button>
         )}
       </div>

@@ -1,49 +1,351 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "SwissMinimalistHost";
+  src: local("Host Grotesk"), local("HostGrotesk-Regular");
+  font-weight: 300 800;
+  font-style: normal;
+}
+
+:root {
+  --dp-color-ground: #ffffff;
+  --dp-color-ink: #000000;
+  --dp-color-surface: #f0f0f0;
+  --dp-color-accent: #c90000;
+  --dp-typography-face: "SwissMinimalistHost", "Host Grotesk", Arial, sans-serif;
+  --dp-typography-body: 16px;
+  --dp-typography-label: 12px;
+  --dp-typography-metadata: 14px;
+  --dp-typography-lead: 17px;
+  --dp-typography-item-title: 24px;
+  --dp-typography-regular: 400;
+  --dp-typography-strong: 700;
+  --dp-typography-display: 750;
+  --dp-typography-label-tracking: 0.12em;
+  --dp-typography-body-leading: 1.5;
+  --dp-spacing-gutter: clamp(20px, 3.3333cqw, 64px);
+  --dp-radius-control: 0;
+  --dp-border-rule: 2px;
+  --dp-motion-feedback: 0s;
+
+  /* Legacy mapping mapped cleanly to Swiss tokens */
+  --bg-dark: var(--dp-color-ground);
+  --card-dark: var(--dp-color-surface);
+  --border-dark: var(--dp-color-ink);
+  --accent-blue: var(--dp-color-ink);
+  --accent-indigo: var(--dp-color-ink);
+  --danger-red: var(--dp-color-accent);
+  --warning-amber: var(--dp-color-accent);
+  --success-green: var(--dp-color-ink);
+}
+
 @layer base {
-  :root {
-    --bg-dark: #090d16;
-    --card-dark: #111827;
-    --border-dark: #1f293d;
-    --accent-blue: #3b82f6;
-    --accent-indigo: #6366f1;
-    --danger-red: #ef4444;
-    --warning-amber: #f59e0b;
-    --success-green: #10b981;
+  * {
+    border-radius: var(--dp-radius-control) !important;
+    box-shadow: none !important;
+    transition-duration: var(--dp-motion-feedback) !important;
   }
 
   body {
-    background-color: var(--bg-dark);
-    color: #f3f4f6;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--dp-color-ground);
+    color: var(--dp-color-ink);
+    font-family: var(--dp-typography-face);
+    font-size: var(--dp-typography-body);
+    line-height: var(--dp-typography-body-leading);
     user-select: none;
     -webkit-user-select: none;
     overflow-x: hidden;
   }
+
+  /* Exposed rules by default */
+  hr {
+    border: 0;
+    border-top: var(--dp-border-rule) solid var(--dp-color-ink);
+  }
+
+  /* High contrast focus ring */
+  *:focus-visible {
+    outline: var(--dp-border-rule) solid var(--dp-color-ink) !important;
+    outline-offset: 2px !important;
+  }
 }
 
-/* Custom Sleek Scrollbar */
+/* Swiss Minimalist Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #0d1322;
+  background: var(--dp-color-surface);
+  border-left: 1px solid var(--dp-color-ink);
 }
 ::-webkit-scrollbar-thumb {
-  background: #24324d;
-  border-radius: 3px;
+  background: var(--dp-color-ink);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3b82f6;
+  background: var(--dp-color-accent);
 }
 
-/* Subtle glow animations for proctoring badges */
-@keyframes pulse-subtle {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.85; transform: scale(1.02); }
+/* Swiss typography utilities */
+.font-swiss {
+  font-family: var(--dp-typography-face);
 }
 
-.animate-pulse-subtle {
-  animation: pulse-subtle 2s infinite ease-in-out;
+.text-swiss-display {
+  font-family: var(--dp-typography-face);
+  font-weight: var(--dp-typography-display);
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+}
+
+.text-swiss-label {
+  font-family: var(--dp-typography-face);
+  font-size: var(--dp-typography-label);
+  letter-spacing: var(--dp-typography-label-tracking);
+  text-transform: uppercase;
+  font-weight: var(--dp-typography-strong);
+}
+
+.text-swiss-meta {
+  font-family: var(--dp-typography-face);
+  font-size: var(--dp-typography-metadata);
+  color: var(--dp-color-ink);
+}
+
+.border-rule {
+  border-width: var(--dp-border-rule);
+  border-color: var(--dp-color-ink);
+}
+
+.border-rule-t {
+  border-top-width: var(--dp-border-rule);
+  border-top-color: var(--dp-color-ink);
+}
+
+.border-rule-b {
+  border-bottom-width: var(--dp-border-rule);
+  border-bottom-color: var(--dp-color-ink);
+}
+
+.border-rule-l {
+  border-left-width: var(--dp-border-rule);
+  border-left-color: var(--dp-color-ink);
+}
+
+.border-rule-r {
+  border-right-width: var(--dp-border-rule);
+  border-right-color: var(--dp-color-ink);
+}
+
+/* Red accent signal indicator */
+.signal-red {
+  background-color: var(--dp-color-accent);
+}
+
+.text-signal-red {
+  color: var(--dp-color-accent);
+}
+
+.border-signal-red {
+  border-color: var(--dp-color-accent);
+}
+
+/* =========================================================
+   SWISS MINIMALIST: DARK SCREEN MODE (INVERTED CONTRAST)
+   ========================================================= */
+
+html.dark {
+  --dp-color-ground: #000000;
+  --dp-color-ink: #ffffff;
+  --dp-color-surface: #121212;
+  --dp-color-accent: #ff3333;
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+/* Invert standard white cards and containers to dark ground */
+html.dark .bg-white {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+/* Invert black text to white */
+html.dark .text-black {
+  color: #ffffff !important;
+}
+
+/* Exposed dividing rules invert from black to crisp white */
+html.dark .border-black,
+html.dark .border-b-black,
+html.dark .border-t-black,
+html.dark .border-l-black,
+html.dark .border-r-black,
+html.dark .border-rule,
+html.dark .border-rule-t,
+html.dark .border-rule-b,
+html.dark .border-rule-l,
+html.dark .border-rule-r {
+  border-color: #ffffff !important;
+}
+
+html.dark .divide-black > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-y-2 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-x-2 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #ffffff !important;
+}
+
+/* Secondary pale grey surfaces (#f0f0f0) become deep charcoal (#121212) */
+html.dark .bg-\[\#f0f0f0\] {
+  background-color: #121212 !important;
+  color: #ffffff !important;
+}
+
+html.dark .hover\:bg-\[\#f0f0f0\]:hover {
+  background-color: #1f1f1f !important;
+  color: #ffffff !important;
+}
+
+/* Neutral muted text becomes readable silver in dark mode */
+html.dark .text-neutral-500,
+html.dark .text-neutral-600,
+html.dark .text-neutral-700,
+html.dark .text-neutral-800 {
+  color: #a3a3a3 !important;
+}
+
+/* Action controls: in light mode they are bg-black text-white. In dark mode, they are bg-white text-black */
+html.dark button.bg-black,
+html.dark a.bg-black {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border-color: #ffffff !important;
+}
+
+html.dark button.bg-black svg,
+html.dark a.bg-black svg {
+  color: #000000 !important;
+}
+
+html.dark button.bg-black:hover,
+html.dark a.bg-black:hover {
+  background-color: #e5e5e5 !important;
+  color: #000000 !important;
+}
+
+/* Invert button hover states */
+html.dark button.bg-white:hover,
+html.dark a.bg-white:hover {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+html.dark button.bg-white:hover svg,
+html.dark a.bg-white:hover svg {
+  color: #000000 !important;
+}
+
+/* Badges with bg-black text-white invert to white background with black text */
+html.dark span.bg-black.text-white {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+html.dark span.bg-black.text-white svg {
+  color: #000000 !important;
+}
+
+/* Active tab buttons */
+html.dark button.bg-black.border-b-0 {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border-color: #ffffff !important;
+}
+
+/* Small square indicators: black squares become crisp white squares */
+html.dark span.bg-black:not(.text-white) {
+  background-color: #ffffff !important;
+}
+
+/* Inputs, textareas, and selects */
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border-color: #ffffff !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #666666 !important;
+}
+
+/* High contrast focus outline in dark mode */
+html.dark *:focus-visible {
+  outline-color: #ffffff !important;
+}
+
+/* Custom scrollbars in dark mode */
+html.dark ::-webkit-scrollbar-track {
+  background: #121212 !important;
+  border-left: 1px solid #333333 !important;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #ffffff !important;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #ff3333 !important;
+}
+
+/* Crimson red signals in dark mode */
+html.dark .bg-\[\#c90000\],
+html.dark .border-\[\#c90000\] {
+  border-color: #ff3333 !important;
+}
+html.dark .bg-\[\#c90000\] {
+  background-color: #ff3333 !important;
+  color: #ffffff !important;
+}
+html.dark .text-\[\#c90000\] {
+  color: #ff4d4d !important;
+}
+
+/* Audio meter in PreAssessmentCheck */
+html.dark .h-full.bg-black {
+  background-color: #ffffff !important;
+}
+
+/* Table headers */
+html.dark thead.bg-black {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border-bottom-color: #ffffff !important;
+}
+
+html.dark thead.bg-black th {
+  color: #000000 !important;
+}
+
+/* User avatar square */
+html.dark div.w-8.h-8.bg-black {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border-color: #ffffff !important;
+}
+
+/* Question palette current tile outline */
+html.dark .outline-black {
+  outline-color: #ffffff !important;
+}
+
+/* Selection */
+html.dark ::selection {
+  background-color: #ffffff !important;
+  color: #000000 !important;
 }

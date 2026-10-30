@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Assessment, Attempt, Question, ProctoringEvent } from '../types';
 import { attemptsAPI, questionsAPI, proctoringAPI } from '../services/api';
 import { analyzeWebcamFrame } from '../services/faceDetection';
+import { useTheme } from '../context/ThemeContext';
 import { 
   Clock, ShieldAlert, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, 
   Bookmark, Send, Camera, Eye, AlertOctagon, Lock, X, Monitor, Wifi, ExternalLink,
-  Activity
+  Activity, Sun, Moon
 } from 'lucide-react';
 
 interface AssessmentPageProps {
@@ -26,6 +27,7 @@ interface ExternalActivityEvent {
 }
 
 export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forceNew, onFinish, onExit }) => {
+  const { theme, toggleTheme } = useTheme();
   // Assessment State
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -97,6 +99,10 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
         if (window.electronAPI) {
           await window.electronAPI.setExamMode(true);
           await window.electronAPI.setFullscreen(true);
+          await window.electronAPI.setExamPolicy?.({
+            ...assessment.policy,
+            permittedExternalDomains: assessment.policy.permittedWebsites
+          });
           const token = localStorage.getItem('proctor_auth_token');
           await window.electronAPI.setActiveSessionInfo?.({ attemptId: startRes.attempt.id, token: token || undefined });
         }
@@ -109,7 +115,8 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
             wChrome.runtime.sendMessage({
               type: 'SET_ASSESSMENT_ACTIVE',
               token,
-              attemptId: startRes.attempt.id
+              attemptId: startRes.attempt.id,
+              policy: assessment.policy
             }, () => {
               if (wChrome.runtime?.lastError) { /* ignore if extension not listening */ }
             });
@@ -163,18 +170,48 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
 
       setViolationCount(res.currentViolationCount);
 
-      // Only trigger notification modal for prolonged critical camera face absence, never for tab switches or external activity
-      if (eventType === 'face_missing' && severity === 'critical') {
+      if (res.shouldAutoSubmit) {
         setActiveViolationModal({
-          title: `Proctoring Alert: ${eventType.replace(/_/g, ' ').toUpperCase()}`,
-          message: details,
-          severity
+          title: 'ASSESSMENT TERMINATED',
+          message: 'This assessment has been automatically terminated due to repeated proctoring violations exceeding policy thresholds.',
+          severity: 'critical'
         });
+        setTimeout(() => {
+          handleFinalSubmit();
+        }, 3000);
+        return;
+      }
+
+      const handling = assessment.policy.violationHandling || 'warn';
+      const tabPolicy = assessment.policy.tabSwitchingPolicy || 'warn';
+
+      if (handling !== 'record_only') {
+        if (eventType === 'tab_switch') {
+          if (tabPolicy === 'warn') {
+            setActiveViolationModal({
+              title: 'Tab Switching Warning',
+              message: 'Window focus was lost. Tab switching is monitored for this assessment. Please keep focus on this exam window.',
+              severity: 'medium'
+            });
+          } else if (tabPolicy === 'restrict') {
+            setActiveViolationModal({
+              title: 'Security Violation: Tab Switch Restricted',
+              message: `Tab switching is strictly restricted for this assessment! Incident recorded (${res.currentViolationCount}/${assessment.policy.maxTotalViolations || 5}). Repeated infractions will terminate the exam.`,
+              severity: 'high'
+            });
+          }
+        } else if (eventType === 'face_missing' && severity === 'critical') {
+          setActiveViolationModal({
+            title: `Proctoring Alert: ${eventType.replace(/_/g, ' ').toUpperCase()}`,
+            message: details,
+            severity
+          });
+        }
       }
     } catch (e) {
       console.warn('Failed to log proctoring violation:', e);
     }
-  }, []);
+  }, [assessment.policy]);
 
   // Initialize Webcam for corner proctoring PIP
   useEffect(() => {
@@ -256,12 +293,16 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
     // Window Blur (lost focus / switched away)
     const handleBlur = () => {
       blurStartRef.current = Date.now();
-      logProctorViolation('tab_switch', 'low', 'Student switched away from assessment.', 0, 'browser_focus');
+      const tabPolicy = assessment.policy.tabSwitchingPolicy || 'warn';
+      const severity = tabPolicy === 'restrict' ? 'high' : (tabPolicy === 'warn' ? 'medium' : 'low');
+      const details = `Student switched away from assessment (Tab Policy: ${tabPolicy.toUpperCase()}).`;
+      
+      logProctorViolation('tab_switch', severity, details, 0, 'browser_focus');
       addActivityEvent({
         type: 'focus_loss',
-        label: 'Switched Away',
-        details: 'Student switched away from assessment.',
-        severity: 'low',
+        label: tabPolicy === 'restrict' ? 'Restricted Tab Switch' : (tabPolicy === 'warn' ? 'Tab Switch Alert' : 'Focus Shift'),
+        details,
+        severity,
         timestamp: new Date()
       });
     };
@@ -317,12 +358,16 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
     if (window.electronAPI) {
       cleanupElectronBlur = window.electronAPI.onWindowBlur((data) => {
         blurStartRef.current = data.timestamp;
-        logProctorViolation('tab_switch', 'low', 'Student switched away from assessment.', 0, 'electron_kiosk');
+        const tabPolicy = assessment.policy.tabSwitchingPolicy || 'warn';
+        const severity = tabPolicy === 'restrict' ? 'high' : (tabPolicy === 'warn' ? 'medium' : 'low');
+        const details = `Student switched away from desktop assessment (Tab Policy: ${tabPolicy.toUpperCase()}).`;
+        
+        logProctorViolation('tab_switch', severity, details, 0, 'electron_kiosk');
         addActivityEvent({
           type: 'focus_loss',
-          label: 'Switched Away',
-          details: 'Student switched away from desktop assessment.',
-          severity: 'low',
+          label: tabPolicy === 'restrict' ? 'Restricted Desktop Switch' : 'Focus Shift',
+          details,
+          severity,
           timestamp: new Date(data.timestamp)
         });
       });
@@ -538,10 +583,10 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
 
   if (!attempt || questions.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#070b14] text-white">
-        <div className="text-center">
-          <div className="w-12 h-12 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-sm font-semibold">Configuring assessment environment & proctoring sensors...</p>
+      <div className="min-h-screen flex items-center justify-center bg-white text-black font-swiss">
+        <div className="text-center border-2 border-black p-8 bg-[#f0f0f0]">
+          <div className="w-8 h-8 border-2 border-black border-t-transparent animate-spin mx-auto mb-4"></div>
+          <p className="text-xs font-bold uppercase tracking-[0.12em]">Configuring assessment runtime & proctoring sensors...</p>
         </div>
       </div>
     );
@@ -549,79 +594,113 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
 
   const severityColor = (severity: string) => {
     switch(severity) {
-      case 'critical': return 'text-red-400 bg-red-500/10 border-red-500/30';
-      case 'high': return 'text-orange-400 bg-orange-500/10 border-orange-500/30';
-      case 'medium': return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
-      default: return 'text-blue-400 bg-blue-500/10 border-blue-500/30';
+      case 'critical': return 'text-black bg-[#f0f0f0] border-2 border-[#c90000]';
+      case 'high': return 'text-black bg-[#f0f0f0] border-2 border-black';
+      case 'medium': return 'text-black bg-[#f0f0f0] border-2 border-neutral-600';
+      default: return 'text-black bg-white border-2 border-black';
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col select-none">
+    <div className="min-h-screen bg-white text-black flex flex-col select-none font-swiss">
       
       {/* Controlled Navigation: Blocked External Navigation Notice Banner */}
       {blockedNavigationNotice && (
-        <div className="bg-amber-500/15 border-b border-amber-500/40 px-4 py-2.5 text-xs text-amber-200 sticky top-0 z-50 animate-fade-in backdrop-blur-md">
+        <div className="bg-[#f0f0f0] border-b-2 border-[#c90000] px-4 py-2.5 text-xs text-black sticky top-0 z-50">
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 flex-1 flex-wrap">
-              <span className="flex items-center gap-1 font-bold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30">
-                <AlertTriangle className="w-3.5 h-3.5" /> Exam Policy Restriction
+              <span className="flex items-center gap-1.5 font-bold uppercase tracking-[0.12em] bg-black text-white px-2 py-0.5 text-[11px]">
+                <span className="w-2 h-2 bg-[#c90000] inline-block"></span>
+                Policy Restriction
               </span>
-              <span>{blockedNavigationNotice.message || 'External navigation is restricted.'}</span>
-              <span className="font-mono text-amber-100 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/30 text-[11px] truncate max-w-md">
+              <span className="font-semibold">{blockedNavigationNotice.message || 'External navigation is restricted.'}</span>
+              <span className="font-mono text-black bg-white px-2 py-0.5 border-2 border-black text-[11px] truncate max-w-md">
                 {blockedNavigationNotice.url}
               </span>
-              <span className="text-amber-400/80 text-[11px]">
-                (Logged for proctor review • Exam continues normally)
+              <span className="text-neutral-600 text-[11px] font-mono">
+                [Audited for evaluation • Session active]
               </span>
             </div>
             <button
               onClick={() => setBlockedNavigationNotice(null)}
-              className="text-amber-400 hover:text-white p-1 rounded hover:bg-amber-500/20 transition shrink-0"
+              className="text-black hover:text-[#c90000] p-1 border border-black hover:bg-black hover:text-white transition shrink-0 cursor-pointer"
               title="Dismiss notice"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
       )}
 
       {/* Top Header Bar */}
-      <header className="bg-slate-900/90 border-b border-slate-800 px-4 sm:px-6 py-3 sticky top-0 z-30 backdrop-blur-md">
+      <header className="bg-white border-b-2 border-black px-4 sm:px-6 py-3.5 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
-              <Lock className="w-4 h-4" />
+          <div className="flex items-center space-x-3.5">
+            <div className="w-8 h-8 bg-black flex items-center justify-center text-white border-2 border-black">
+              <Lock className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h2 className="font-bold text-sm text-white leading-tight">{assessment.title}</h2>
-              <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                <span>Question {currentIdx + 1} of {questions.length}</span>
+              <h2 className="font-extrabold text-sm text-black uppercase tracking-tight leading-tight">{assessment.title}</h2>
+              <div className="flex items-center gap-2 text-[11px] text-neutral-600 font-mono">
+                <span>QUESTION {currentIdx + 1} OF {questions.length}</span>
                 <span>•</span>
-                <span className={savingStatus === 'saving' ? 'text-amber-400' : 'text-emerald-400'}>
-                  {savingStatus === 'saving' ? 'Saving answer...' : 'All answers saved'}
+                <span className={savingStatus === 'saving' ? 'text-[#c90000] font-bold' : 'text-black font-bold'}>
+                  {savingStatus === 'saving' ? 'SAVING...' : 'SAVED'}
                 </span>
               </div>
             </div>
           </div>
 
+          {/* Assessment Security Badges */}
+          <div className="hidden md:flex items-center gap-2">
+            {assessment.policy.aiUsage === 'allowed' ? (
+              <span className="text-[11px] px-2.5 py-1 font-bold uppercase tracking-[0.12em] bg-[#f0f0f0] border-2 border-black text-black flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-black inline-block"></span>
+                AI Allowed ({assessment.policy.aiPromptMonitoring === 'enabled' ? 'Prompts Monitored' : 'Audit Off'})
+              </span>
+            ) : (
+              <span className="text-[11px] px-2.5 py-1 font-bold uppercase tracking-[0.12em] bg-black text-white flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-[#c90000] inline-block"></span>
+                AI Prohibited • Tabs {(assessment.policy.tabSwitchingPolicy || 'warn').toUpperCase()}
+              </span>
+            )}
+          </div>
+
           {/* Center Timer */}
-          <div className={`flex items-center space-x-2 px-4 py-1.5 rounded-full border font-mono font-bold text-sm ${
+          <div className={`flex items-center space-x-2 px-3.5 py-1 border-2 font-mono font-black text-sm uppercase ${
             isTimeCritical 
-              ? 'bg-red-500/10 border-red-500/30 text-red-400 animate-pulse' 
-              : 'bg-slate-950 border-slate-800 text-slate-200'
+              ? 'bg-[#f0f0f0] border-[#c90000] text-[#c90000]' 
+              : 'bg-[#f0f0f0] border-black text-black'
           }`}>
             <Clock className="w-4 h-4" />
             <span>{formatTime(remainingSeconds)}</span>
           </div>
 
-          {/* Submit Action */}
-          <div className="flex items-center space-x-3">
+          {/* Controls: Theme & Submit Action */}
+          <div className="flex items-center space-x-2.5">
+            <button
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Screen Mode'}
+              className="p-2 text-black bg-white hover:bg-black hover:text-white border-2 border-black transition cursor-pointer flex items-center gap-1.5"
+            >
+              {theme === 'dark' ? (
+                <>
+                  <Sun className="w-4 h-4 text-black" />
+                  <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-[0.12em]">Light</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-4 h-4 text-black" />
+                  <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-[0.12em]">Dark</span>
+                </>
+              )}
+            </button>
+
             <button
               onClick={() => setShowSubmitModal(true)}
               disabled={isSubmitting}
-              className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition"
+              className="px-4 py-2 bg-black hover:bg-neutral-800 text-white font-bold border-2 border-black text-xs uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
               <span>Submit Assessment</span>
@@ -632,47 +711,46 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
       </header>
 
       {/* Tab Bar: Exam Paper | Activity Log */}
-      <div className="bg-[#0a0f1d] border-b border-slate-800 px-4 sm:px-6">
+      <div className="bg-[#f0f0f0] border-b-2 border-black px-4 sm:px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex space-x-2">
+          <div className="flex space-x-2 pt-2">
             <button
               onClick={() => setActiveTab('exam')}
-              className={`py-2 px-4 text-xs font-bold rounded-t-xl transition flex items-center gap-2 border-t-2 ${
+              className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] transition flex items-center gap-2 border-2 border-black cursor-pointer ${
                 activeTab === 'exam'
-                  ? 'bg-slate-900 border-blue-500 text-white'
-                  : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200'
+                  ? 'bg-white text-black border-b-0'
+                  : 'bg-[#f0f0f0] text-neutral-600 hover:text-black border-transparent'
               }`}
             >
-              <Lock className="w-3.5 h-3.5 text-blue-400" />
+              <Lock className="w-3.5 h-3.5" />
               <span>Assessment Paper</span>
             </button>
 
             <button
               onClick={() => setActiveTab('activity')}
-              className={`py-2 px-4 text-xs font-bold rounded-t-xl transition flex items-center gap-2 border-t-2 ${
+              className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] transition flex items-center gap-2 border-2 border-black cursor-pointer ${
                 activeTab === 'activity'
-                  ? 'bg-slate-900 border-amber-500 text-amber-300'
-                  : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200'
+                  ? 'bg-white text-black border-b-0'
+                  : 'bg-[#f0f0f0] text-neutral-600 hover:text-black border-transparent'
               }`}
             >
-              <Activity className="w-3.5 h-3.5 text-amber-400" />
+              <Activity className="w-3.5 h-3.5" />
               <span>Proctoring Activity</span>
               {externalActivityLog.length > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono">
+                <span className="px-1.5 py-0.2 bg-black text-white text-[10px] font-mono">
                   {externalActivityLog.length}
                 </span>
               )}
             </button>
           </div>
 
-          <div className="hidden md:flex items-center gap-2 text-[11px] text-slate-400 font-mono">
-            <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
-            <span>Continuous AI Proctoring Active</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <div className="hidden md:flex items-center gap-2 text-[11px] text-black font-bold uppercase tracking-[0.12em]">
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>Continuous Proctoring Active</span>
+            <span className="w-2 h-2 bg-black inline-block"></span>
           </div>
         </div>
       </div>
-
 
       {/* Main Content Area */}
       <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -680,34 +758,34 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
         {/* Left / Center Area */}
         <div className="lg:col-span-8 space-y-6">
           {activeTab === 'exam' ? (
-            <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl">
+            <div className="border-2 border-black bg-white p-6 sm:p-8">
               
               {/* Question Meta Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-6">
+              <div className="flex items-center justify-between pb-4 border-b-2 border-black mb-6">
                 <div className="flex items-center space-x-2">
-                  <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                    Question {currentIdx + 1}
+                  <span className="text-xs px-2.5 py-1 font-bold uppercase tracking-[0.12em] bg-black text-white">
+                    QUESTION {currentIdx + 1 < 10 ? `0${currentIdx + 1}` : currentIdx + 1}
                   </span>
-                  <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-slate-800 text-slate-300">
+                  <span className="text-xs px-2.5 py-1 font-bold uppercase tracking-[0.12em] bg-[#f0f0f0] border-2 border-black text-black">
                     {currentQuestion.category}
                   </span>
                 </div>
 
                 <button
                   onClick={toggleMarkForReview}
-                  className={`text-xs px-3 py-1.5 rounded-xl border flex items-center gap-1.5 font-semibold transition ${
+                  className={`text-xs px-3 py-1.5 border-2 border-black flex items-center gap-1.5 font-bold uppercase tracking-[0.12em] transition cursor-pointer ${
                     isMarked
-                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
-                      : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white'
+                      ? 'bg-black text-white'
+                      : 'bg-white text-black hover:bg-[#f0f0f0]'
                   }`}
                 >
-                  <Bookmark className={`w-3.5 h-3.5 ${isMarked ? 'fill-purple-400' : ''}`} />
+                  <Bookmark className={`w-3.5 h-3.5 ${isMarked ? 'fill-white' : ''}`} />
                   <span>{isMarked ? 'Marked for Review' : 'Mark for Review'}</span>
                 </button>
               </div>
 
               {/* Question Text */}
-              <p className="text-base sm:text-lg font-medium text-white leading-relaxed mb-8">
+              <p className="text-lg sm:text-xl font-bold text-black leading-snug mb-8">
                 {currentQuestion.questionText}
               </p>
 
@@ -721,25 +799,25 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
                     <button
                       key={optIdx}
                       onClick={() => handleSelectOption(optIdx)}
-                      className={`w-full text-left p-4 rounded-xl border transition flex items-center justify-between ${
+                      className={`w-full text-left p-4 border-2 border-black transition cursor-pointer flex items-center justify-between ${
                         isSelected
-                          ? 'bg-blue-600/15 border-blue-500/80 text-white shadow-md shadow-blue-500/10'
-                          : 'bg-slate-950/50 border-slate-800/80 hover:border-slate-700 text-slate-300 hover:bg-slate-800/40'
+                          ? 'bg-black text-white font-bold'
+                          : 'bg-white hover:bg-[#f0f0f0] text-black'
                       }`}
                     >
                       <div className="flex items-center space-x-3.5">
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                          isSelected ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'
+                        <div className={`w-7 h-7 border-2 border-current flex items-center justify-center font-bold text-xs shrink-0 ${
+                          isSelected ? 'bg-black text-white' : 'bg-[#f0f0f0] text-black'
                         }`}>
                           {letter}
                         </div>
                         <span className="text-sm font-medium leading-snug">{optText}</span>
                       </div>
 
-                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
-                        isSelected ? 'border-blue-500 bg-blue-600 text-white' : 'border-slate-700 bg-slate-900'
+                      <div className={`w-5 h-5 border-2 border-current flex items-center justify-center shrink-0 ${
+                        isSelected ? 'bg-white text-black' : 'bg-transparent'
                       }`}>
-                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-black" />}
                       </div>
                     </button>
                   );
@@ -747,11 +825,11 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
               </div>
 
               {/* Bottom Nav Controls */}
-              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+              <div className="flex items-center justify-between pt-5 border-t-2 border-black">
                 <button
                   disabled={currentIdx === 0}
                   onClick={() => setCurrentIdx(prev => Math.max(0, prev - 1))}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1 transition"
+                  className="px-5 py-2.5 bg-white hover:bg-[#f0f0f0] disabled:opacity-30 disabled:cursor-not-allowed text-black border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" /> Previous
                 </button>
@@ -759,7 +837,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
                 <button
                   disabled={currentIdx === questions.length - 1}
                   onClick={() => setCurrentIdx(prev => Math.min(questions.length - 1, prev + 1))}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold flex items-center gap-1 transition"
+                  className="px-6 py-2.5 bg-black hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
                 >
                   Next <ChevronRight className="w-4 h-4" />
                 </button>
@@ -768,80 +846,74 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
             </div>
           ) : (
             /* Automatic External Activity Monitor */
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="border-2 border-black bg-white overflow-hidden">
               
               {/* Header */}
-              <div className="bg-slate-950 px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+              <div className="bg-[#f0f0f0] px-5 py-4 border-b-2 border-black flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-                    <Monitor className="w-4.5 h-4.5 text-amber-400" />
+                  <div className="w-8 h-8 bg-black flex items-center justify-center text-white">
+                    <Monitor className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-white">Proctoring Activity Log</h3>
-                    <p className="text-[11px] text-slate-400">Automatically captured violations & focus events</p>
+                    <h3 className="font-extrabold text-sm uppercase tracking-tight text-black">Proctoring Activity Log</h3>
+                    <p className="text-[11px] text-neutral-600 font-mono">AUTOMATIC SENSOR & NAVIGATION RECORD</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setActiveTab('exam')}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+                  className="px-3.5 py-1.5 bg-white hover:bg-black hover:text-white text-black border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" /> Back to Exam
                 </button>
               </div>
 
               {/* Detection Legend */}
-              <div className="px-5 py-3 border-b border-slate-800 flex flex-wrap gap-3">
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                  <div className="w-2 h-2 rounded-full bg-red-400"></div>
+              <div className="px-5 py-3 border-b-2 border-black bg-white flex flex-wrap gap-4 text-[11px] font-bold uppercase tracking-[0.12em]">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-[#c90000]"></span>
                   <span>Critical Violation</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                  <div className="w-2 h-2 rounded-full bg-orange-400"></div>
-                  <span>High Severity</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-black"></span>
+                  <span>High / Medium Severity</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                  <div className="w-2 h-2 rounded-full bg-amber-400"></div>
-                  <span>Medium Severity</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                  <Wifi className="w-3 h-3 text-blue-400" />
-                  <span>Chrome Extension events auto-detected</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 bg-neutral-400"></span>
+                  <span>Companion Auto-Captured</span>
                 </div>
               </div>
 
               {/* Extension Integration Notice */}
-              <div className="mx-5 mt-4 p-3.5 bg-blue-500/5 border border-blue-500/20 rounded-xl flex items-start gap-2.5">
-                <ExternalLink className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-                <div className="text-[11px] text-blue-200">
-                  <strong className="text-blue-100">Chrome Extension Active:</strong> Install the <strong>WUElev8 Proctor Companion</strong> extension in Chrome/Edge. It will automatically detect and report ChatGPT, Claude, and Google Search visits to this log without any student input.
-                </div>
+              <div className="mx-5 mt-4 p-3.5 bg-[#f0f0f0] border-2 border-black text-xs text-black leading-relaxed">
+                <strong className="block mb-1 uppercase tracking-[0.12em] font-bold">Companion Extension Status:</strong>
+                The WUElev8 companion monitors authorized AI interactions and restricts unauthorized platform access according to this assessment's active policy.
               </div>
 
               {/* Activity Event List */}
-              <div className="p-5 space-y-3 max-h-96 overflow-y-auto">
+              <div className="p-5 space-y-3 max-h-96 overflow-y-auto divide-y-2 divide-black">
                 {externalActivityLog.length === 0 ? (
-                  <div className="text-center py-12 text-slate-500">
-                    <ShieldAlert className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                    <p className="text-sm font-semibold text-slate-400">No suspicious activity detected</p>
-                    <p className="text-xs mt-1 text-slate-500">All proctoring events will appear here automatically</p>
+                  <div className="text-center py-12 text-black">
+                    <ShieldAlert className="w-8 h-8 mx-auto mb-2 text-neutral-400" />
+                    <p className="text-xs font-bold uppercase tracking-[0.12em]">No violations detected</p>
+                    <p className="text-[11px] text-neutral-600 font-mono mt-1">All audit events will stream here</p>
                   </div>
                 ) : (
                   externalActivityLog.map(event => (
                     <div
                       key={event.id}
-                      className={`p-3.5 rounded-xl border text-xs flex items-start gap-3 ${severityColor(event.severity)}`}
+                      className={`p-3.5 text-xs flex items-start gap-3 pt-3 first:pt-0 ${severityColor(event.severity)}`}
                     >
-                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span className={`w-2 h-2 shrink-0 mt-1 ${event.severity === 'critical' ? 'bg-[#c90000]' : 'bg-black'}`}></span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="font-bold text-sm">{event.label}</span>
-                          <span className="text-[10px] opacity-70 font-mono shrink-0">
+                          <span className="font-bold text-xs uppercase tracking-[0.12em]">{event.label}</span>
+                          <span className="text-[10px] font-mono text-neutral-600 shrink-0">
                             {event.timestamp.toLocaleTimeString()}
                           </span>
                         </div>
-                        <p className="opacity-80 leading-relaxed break-words">{event.details}</p>
+                        <p className="text-neutral-800 leading-relaxed break-words">{event.details}</p>
                         {event.duration && event.duration > 0 && (
-                          <span className="mt-1 inline-block px-2 py-0.5 rounded bg-black/20 font-mono text-[10px]">
+                          <span className="mt-1 inline-block px-2 py-0.5 bg-black text-white font-mono text-[10px]">
                             Duration: {(event.duration / 1000).toFixed(1)}s
                           </span>
                         )}
@@ -851,44 +923,41 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
                 )}
               </div>
 
-              <div className="px-5 pb-4">
-                <p className="text-[10px] text-slate-500 text-center">
-                  All events are automatically logged with timestamps and reported to the administrator. This log is read-only.
+              <div className="px-5 pb-4 border-t-2 border-black pt-3 bg-[#f0f0f0]">
+                <p className="text-[10px] text-neutral-600 uppercase font-mono text-center">
+                  All events are authoritatively logged with timestamps. Read-only timeline.
                 </p>
               </div>
             </div>
           )}
         </div>
 
-
         {/* Right Sidebar: Proctor PIP & Navigation Grid (4 cols) */}
         <div className="lg:col-span-4 space-y-6">
           
           {/* Live Proctoring Corner PIP */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-xl">
-            <div className="flex items-center justify-between mb-2.5">
-              <div className="flex items-center space-x-1.5 text-xs font-bold text-white">
-                <Camera className="w-3.5 h-3.5 text-blue-400" />
-                <span>Live AI Proctor Feed</span>
+          <div className="border-2 border-black bg-white p-4">
+            <div className="flex items-center justify-between mb-3 border-b-2 border-black pb-2">
+              <div className="flex items-center space-x-1.5 text-xs font-bold uppercase tracking-[0.12em] text-black">
+                <Camera className="w-3.5 h-3.5 text-black" />
+                <span>AI PROCTOR FEED</span>
               </div>
 
               {/* Status Chip */}
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 ${
+              <span className={`text-[10px] px-2 py-0.5 font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 ${
                 proctorStatus === 'normal'
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                  : proctorStatus === 'looking_away'
-                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                  : 'bg-red-500/15 text-red-400 border border-red-500/40 animate-pulse'
+                  ? 'bg-black text-white'
+                  : 'bg-[#f0f0f0] border-2 border-black text-black'
               }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${
-                  proctorStatus === 'normal' ? 'bg-emerald-400' : proctorStatus === 'looking_away' ? 'bg-amber-400' : 'bg-red-400'
+                <span className={`w-1.5 h-1.5 ${
+                  proctorStatus === 'normal' ? 'bg-white' : 'bg-[#c90000]'
                 }`}></span>
                 {proctorStatus === 'normal' ? 'Verified' : proctorStatus === 'looking_away' ? 'Gaze Away' : 'Face Missing'}
               </span>
             </div>
 
-            {/* Video Preview */}
-            <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-slate-800">
+            {/* Video Preview (Rectangular Crop) */}
+            <div className="relative aspect-video bg-black overflow-hidden border-2 border-black">
               <video
                 ref={videoRef}
                 autoPlay
@@ -896,46 +965,46 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
                 muted
                 className="w-full h-full object-cover -scale-x-100"
               />
-              <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/60 backdrop-blur-sm text-[10px] text-slate-300 font-mono">
-                Conf: {Math.round(faceConfidence * 100)}%
+              <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black text-white text-[10px] font-mono">
+                CONF: {Math.round(faceConfidence * 100)}%
               </div>
             </div>
 
             {/* Policy Violations counter */}
-            <div className="mt-3 flex items-center justify-between text-xs text-slate-400 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
-              <span className="flex items-center gap-1">
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-400" /> Observed Events:
+            <div className="mt-3 flex items-center justify-between text-xs text-black bg-[#f0f0f0] p-2.5 border-2 border-black">
+              <span className="font-bold uppercase tracking-[0.12em] flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 text-black" /> Observed Events:
               </span>
-              <span className={`font-mono font-bold ${violationCount > 0 ? 'text-amber-400' : 'text-slate-200'}`}>
+              <span className="font-mono font-black text-sm">
                 {violationCount} / {assessment.policy.maxTotalViolations || 6}
               </span>
             </div>
           </div>
 
           {/* Question Navigation Palette */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Question Palette</h3>
-              <span className="text-xs text-slate-400 font-mono">{answeredCount} / {questions.length} Solved</span>
+          <div className="border-2 border-black bg-white p-5">
+            <div className="flex items-center justify-between mb-4 border-b-2 border-black pb-2">
+              <h3 className="text-xs font-bold text-black uppercase tracking-[0.12em]">Question Palette</h3>
+              <span className="text-xs text-black font-mono font-bold">{answeredCount} / {questions.length} Solved</span>
             </div>
 
-            {/* Grid of question tiles */}
+            {/* Grid of question tiles (Rectangular) */}
             <div className="grid grid-cols-5 gap-2 mb-4">
               {questions.map((q, idx) => {
                 const isCurrent = currentIdx === idx;
                 const isAns = answers.has(q.id);
                 const isRev = markedForReview.has(q.id);
 
-                let bgClass = 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700';
-                if (isAns && !isRev) bgClass = 'bg-emerald-600 text-white border-emerald-500';
-                if (isRev) bgClass = 'bg-purple-600 text-white border-purple-500';
+                let bgClass = 'bg-white text-black border-2 border-black hover:bg-[#f0f0f0]';
+                if (isAns && !isRev) bgClass = 'bg-black text-white border-2 border-black';
+                if (isRev) bgClass = 'bg-[#f0f0f0] text-black border-2 border-[#c90000]';
 
                 return (
                   <button
                     key={q.id}
                     onClick={() => { setCurrentIdx(idx); setActiveTab('exam'); }}
-                    className={`h-9 rounded-xl font-mono text-xs font-bold border transition relative ${bgClass} ${
-                      isCurrent ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-900 scale-105 z-10' : ''
+                    className={`h-9 font-mono text-xs font-bold border-2 transition cursor-pointer ${bgClass} ${
+                      isCurrent ? 'outline-2 outline-black outline-offset-2' : ''
                     }`}
                   >
                     {idx + 1}
@@ -945,21 +1014,21 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
             </div>
 
             {/* Legend */}
-            <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400 border-t border-slate-800 pt-3">
+            <div className="grid grid-cols-2 gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-black border-t-2 border-black pt-3">
               <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
+                <span className="w-2.5 h-2.5 bg-black"></span>
                 <span>Answered</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-slate-800 border border-slate-700"></div>
+                <span className="w-2.5 h-2.5 bg-white border border-black"></span>
                 <span>Unanswered</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-purple-500"></div>
-                <span>Marked for Review</span>
+                <span className="w-2.5 h-2.5 bg-[#f0f0f0] border border-[#c90000]"></span>
+                <span>Marked</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full ring-2 ring-blue-400 bg-transparent"></div>
+                <span className="w-2.5 h-2.5 outline-2 outline-black"></span>
                 <span>Current</span>
               </div>
             </div>
@@ -971,31 +1040,31 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
 
       {/* Violation Alert Modal (Non-punitive warning) */}
       {activeViolationModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-slate-900 border border-amber-500/40 rounded-3xl p-6 shadow-2xl">
-            <div className="flex items-center space-x-3 mb-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                <AlertOctagon className="w-6 h-6" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-md bg-white border-2 border-[#c90000] p-6 sm:p-8">
+            <div className="flex items-center space-x-3 mb-3 border-b-2 border-black pb-3">
+              <div className="w-8 h-8 bg-black flex items-center justify-center text-white">
+                <AlertOctagon className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h3 className="font-bold text-white text-base">{activeViolationModal.title}</h3>
-                <span className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider">
+                <h3 className="font-extrabold text-black text-base uppercase tracking-tight">{activeViolationModal.title}</h3>
+                <span className="text-[11px] font-bold text-[#c90000] uppercase tracking-[0.12em]">
                   Audited Incident Recorded
                 </span>
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/70 p-4 rounded-xl border border-slate-800 my-4">
+            <p className="text-xs text-black leading-relaxed bg-[#f0f0f0] p-4 border-2 border-black my-4">
               {activeViolationModal.message}
             </p>
 
-            <p className="text-[11px] text-slate-400 mb-6">
-              Please maintain your camera view and stay inside the assessment window. These signals are logged for administrator review.
+            <p className="text-[11px] text-neutral-600 uppercase font-mono mb-6">
+              Please maintain your camera view and stay inside the assessment window. Recorded in admin timeline.
             </p>
 
             <button
               onClick={() => setActiveViolationModal(null)}
-              className="w-full py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold rounded-xl text-xs transition"
+              className="w-full py-3 bg-black hover:bg-neutral-800 text-white font-bold border-2 border-black text-xs uppercase tracking-[0.12em] transition cursor-pointer"
             >
               I Acknowledge & Return to Assessment
             </button>
@@ -1005,38 +1074,38 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
 
       {/* Final Submission Confirmation Modal */}
       {showSubmitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-3xl p-6 shadow-2xl">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-                <Send className="w-6 h-6" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-md bg-white border-2 border-black p-6 sm:p-8">
+            <div className="flex items-center space-x-3 mb-4 border-b-2 border-black pb-3">
+              <div className="w-8 h-8 bg-black flex items-center justify-center text-white">
+                <Send className="w-4 h-4 text-white" />
               </div>
               <div>
-                <h3 className="font-bold text-white text-base">Submit Assessment?</h3>
-                <p className="text-xs text-slate-400">Review your answered questions</p>
+                <h3 className="font-extrabold text-black text-base uppercase tracking-tight">Submit Assessment?</h3>
+                <p className="text-xs text-neutral-600 font-mono">Review questions summary before submitting</p>
               </div>
             </div>
 
-            <div className="bg-slate-950/70 p-4 rounded-2xl border border-slate-800 space-y-2 mb-6 text-xs">
-              <div className="flex justify-between text-slate-300">
+            <div className="bg-[#f0f0f0] p-4 border-2 border-black space-y-2 mb-6 text-xs divide-y divide-neutral-300">
+              <div className="flex justify-between text-black font-bold uppercase tracking-[0.12em] pt-1 first:pt-0">
                 <span>Total Questions:</span>
-                <strong className="text-white">{questions.length}</strong>
+                <span>{questions.length}</span>
               </div>
-              <div className="flex justify-between text-slate-300">
+              <div className="flex justify-between text-black font-bold uppercase tracking-[0.12em] pt-1">
                 <span>Answered:</span>
-                <strong className="text-emerald-400">{answeredCount}</strong>
+                <span>{answeredCount}</span>
               </div>
-              <div className="flex justify-between text-slate-300">
+              <div className="flex justify-between text-black font-bold uppercase tracking-[0.12em] pt-1">
                 <span>Unanswered:</span>
-                <strong className="text-amber-400">{questions.length - answeredCount}</strong>
+                <span>{questions.length - answeredCount}</span>
               </div>
-              <div className="flex justify-between text-slate-300">
+              <div className="flex justify-between text-black font-bold uppercase tracking-[0.12em] pt-1">
                 <span>Marked for Review:</span>
-                <strong className="text-purple-400">{markedForReview.size}</strong>
+                <span>{markedForReview.size}</span>
               </div>
-              <div className="flex justify-between text-slate-300">
+              <div className="flex justify-between text-black font-bold uppercase tracking-[0.12em] pt-1">
                 <span>Proctoring Events:</span>
-                <strong className="text-amber-400">{violationCount}</strong>
+                <span>{violationCount}</span>
               </div>
             </div>
 
@@ -1044,14 +1113,14 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
               <button
                 disabled={isSubmitting}
                 onClick={() => setShowSubmitModal(false)}
-                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition"
+                className="flex-1 py-3 bg-white hover:bg-[#f0f0f0] text-black border-2 border-black font-bold text-xs uppercase tracking-[0.12em] transition cursor-pointer"
               >
                 Continue Assessment
               </button>
               <button
                 disabled={isSubmitting}
                 onClick={handleFinalSubmit}
-                className="flex-1 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs transition disabled:opacity-50"
+                className="flex-1 py-3 bg-black hover:bg-neutral-800 text-white border-2 border-black font-bold text-xs uppercase tracking-[0.12em] transition disabled:opacity-50 cursor-pointer"
               >
                 {isSubmitting ? 'Scoring Answers...' : 'Confirm Submission'}
               </button>

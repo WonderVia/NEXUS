@@ -103,9 +103,7 @@ export const PreAssessmentCheck: React.FC<PreAssessmentCheckProps> = ({ assessme
 
     // Check Network Connectivity & Ping to backend
     async function checkNetwork() {
-      // Derive health URL from the API base so it works in both Vite dev (proxy)
-      // and Electron production (absolute URL) modes.
-      const apiBase = getApiBase(); // e.g. '/api' or 'http://localhost:5000/api'
+      const apiBase = getApiBase();
       const healthUrl = apiBase.startsWith('http')
         ? apiBase.replace(/\/api\/?$/, '/health')
         : '/health';
@@ -171,54 +169,67 @@ export const PreAssessmentCheck: React.FC<PreAssessmentCheckProps> = ({ assessme
   const allChecksPassed = cameraGranted && faceDetected && micGranted && networkOk && fullscreenOk && rulesAccepted;
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-white text-black">
       
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-800">
-        <div>
+      {/* Top Header Rail */}
+      <div className="border-b-2 border-black pb-4 mb-8">
+        <div className="flex items-center justify-between mb-3">
           <button 
             onClick={onCancel}
-            className="text-xs text-slate-400 hover:text-white flex items-center gap-1 mb-2 transition"
+            className="text-xs font-bold uppercase tracking-[0.12em] text-black hover:text-[#c90000] flex items-center gap-1.5 transition cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Return to Dashboard
           </button>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-            <ShieldAlert className="w-6 h-6 text-blue-400" />
-            Pre-Assessment System Verification
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Validating hardware permissions, network latency, and test environment for: <strong className="text-slate-200">{assessment.title}</strong>
-          </p>
-        </div>
 
-        <div className="hidden sm:block text-right">
-          <span className="text-xs px-3 py-1 rounded-full font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-            Step 1 of 2: Readiness
+          <span className="text-[11px] px-2.5 py-1 bg-black text-white font-bold uppercase tracking-[0.12em]">
+            STEP 01 / HARDWARE READINESS
           </span>
         </div>
+
+        <div className="text-[11px] font-bold tracking-[0.12em] uppercase text-black flex items-center gap-2 mb-2">
+          <span className="w-2.5 h-2.5 bg-[#c90000] inline-block"></span>
+          <span>SYSTEM VERIFICATION & PROCTORING CHECK</span>
+        </div>
+
+        <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tighter text-black uppercase leading-[0.95]">
+          {assessment.title}
+        </h1>
+        <p className="text-xs text-neutral-600 mt-2 font-medium">
+          Authoritative hardware verification, network latency evaluation, and integrity rule acknowledgment.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* Left Column: Live Camera & Microphone Test (7 cols) */}
         <div className="lg:col-span-7 space-y-6">
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Camera className="w-4 h-4 text-blue-400" /> Live Webcam Feed
-              </h3>
-              <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold flex items-center gap-1 ${
+          <div className="border-2 border-black bg-white p-5">
+            <div className="flex items-center justify-between mb-3 border-b-2 border-black pb-2">
+              <div className="text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-2">
+                <Camera className="w-4 h-4 text-black" />
+                <span>01 / LIVE WEBCAM FEED</span>
+              </div>
+              <span className={`text-[11px] px-2 py-0.5 font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 ${
                 faceDetected 
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                  ? 'bg-black text-white' 
+                  : 'bg-[#f0f0f0] border-2 border-black text-black'
               }`}>
-                {faceDetected ? <CheckCircle2 className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                {faceDetected ? 'Face Verified in Frame' : 'Detecting Face...'}
+                {faceDetected ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Face Verified</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 bg-[#c90000] inline-block animate-pulse"></span>
+                    <span>Detecting Face...</span>
+                  </>
+                )}
               </span>
             </div>
 
-            {/* Video Canvas Container */}
-            <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+            {/* Video Container (Strict Rectangular Crop) */}
+            <div className="relative aspect-video bg-black overflow-hidden border-2 border-black flex items-center justify-center">
               <video
                 ref={videoRef}
                 autoPlay
@@ -228,186 +239,203 @@ export const PreAssessmentCheck: React.FC<PreAssessmentCheckProps> = ({ assessme
               />
 
               {cameraError && (
-                <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center">
-                  <XCircle className="w-10 h-10 text-red-400 mb-2" />
-                  <p className="text-sm font-bold text-white">Camera Access Denied or Unavailable</p>
-                  <p className="text-xs text-slate-400 mt-1 max-w-sm">{cameraError}</p>
+                <div className="absolute inset-0 bg-white flex flex-col items-center justify-center p-6 text-center border-2 border-[#c90000]">
+                  <span className="w-3 h-3 bg-[#c90000] mb-2"></span>
+                  <p className="text-sm font-extrabold uppercase tracking-tight text-black">Camera Access Denied or Unavailable</p>
+                  <p className="text-xs text-neutral-600 mt-1 max-w-sm">{cameraError}</p>
                   <button
                     onClick={() => window.location.reload()}
-                    className="mt-4 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition"
+                    className="mt-4 px-4 py-2 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] transition cursor-pointer"
                   >
                     Retry Permission
                   </button>
                 </div>
               )}
 
-              {/* Face Guide Target Overlay */}
+              {/* Face Guide Target Overlay (Rectangular) */}
               {cameraGranted && !cameraError && (
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                  <div className={`w-48 h-60 rounded-full border-2 border-dashed transition-colors duration-300 ${
-                    faceDetected ? 'border-emerald-500/60 shadow-lg shadow-emerald-500/20' : 'border-amber-400/40 animate-pulse'
+                  <div className={`w-52 h-64 border-2 border-dashed ${
+                    faceDetected ? 'border-white' : 'border-[#c90000]'
                   }`}></div>
                 </div>
               )}
             </div>
 
             {/* Microphone Volume Level Bar */}
-            <div className="mt-4 pt-4 border-t border-slate-800/80">
-              <div className="flex items-center justify-between text-xs mb-1.5">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Mic className="w-3.5 h-3.5 text-indigo-400" /> Microphone Input Level
+            <div className="mt-4 pt-4 border-t-2 border-black">
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 text-black">
+                  <Mic className="w-3.5 h-3.5 text-black" /> Microphone Input Level
                 </span>
-                <span className="font-mono text-slate-300">{audioLevel}%</span>
+                <span className="font-mono font-bold text-black">{audioLevel}%</span>
               </div>
-              <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+              <div className="w-full h-3 bg-[#f0f0f0] border-2 border-black overflow-hidden">
                 <div 
-                  className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-75 rounded-full"
+                  className="h-full bg-black transition-none"
                   style={{ width: `${audioLevel}%` }}
                 ></div>
               </div>
             </div>
           </div>
 
-          {/* Privacy & Technical Disclosure */}
-          <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-4 text-xs text-slate-400 leading-relaxed">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+          {/* Technical Disclosure */}
+          <div className="border-2 border-black bg-[#f0f0f0] p-4 text-xs text-black leading-relaxed">
+            <div className="flex items-start gap-2.5">
+              <span className="w-2.5 h-2.5 bg-black shrink-0 mt-1"></span>
               <div>
-                <strong className="text-slate-200">System Transparency Notice:</strong> Face detection is performed locally in client memory using WebAssembly / TensorFlow.js. Video frames are analyzed in real-time and discarded immediately. No continuous video recording is stored or uploaded by default.
+                <strong className="uppercase tracking-[0.12em] font-bold">Client-Side Privacy Architecture:</strong> Face presence is evaluated locally in browser memory via WebAssembly / TensorFlow.js. Video frames are discarded instantaneously; no continuous camera stream is transmitted or persisted without infraction triggers.
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Column: Interactive System Checklist & Consent (5 cols) */}
+        {/* Right Column: Hardware & Policy Matrix (5 cols) */}
         <div className="lg:col-span-5 space-y-6">
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
-            <h3 className="text-sm font-bold text-white mb-4">Hardware & Environment Checklist</h3>
+          <div className="border-2 border-black bg-white p-5">
+            <div className="text-xs font-bold uppercase tracking-[0.12em] text-black mb-4 border-b-2 border-black pb-2 flex items-center justify-between">
+              <span>02 / HARDWARE VERIFICATION CHECKLIST</span>
+              <span className="w-2 h-2 bg-black"></span>
+            </div>
 
-            <div className="space-y-3">
+            {/* Checklist Matrix */}
+            <div className="border-2 border-black bg-[#f0f0f0] divide-y-2 divide-black">
               {/* Check 1: Camera Permission */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+              <div className="flex items-center justify-between p-3">
                 <div className="flex items-center space-x-3">
-                  <Camera className="w-4 h-4 text-blue-400" />
+                  <Camera className="w-4 h-4 text-black" />
                   <div>
-                    <div className="text-xs font-semibold text-slate-200">Webcam Permission</div>
-                    <div className="text-[10px] text-slate-400">Video feed active</div>
+                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-black">Webcam Permission</div>
+                    <div className="text-[10px] text-neutral-600 font-mono">Stream initialized</div>
                   </div>
                 </div>
                 {cameraGranted ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle2 className="w-4 h-4 text-black" />
                 ) : (
-                  <XCircle className="w-4 h-4 text-red-400" />
+                  <span className="w-2 h-2 bg-[#c90000]"></span>
                 )}
               </div>
 
               {/* Check 2: Face in Camera */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+              <div className="flex items-center justify-between p-3">
                 <div className="flex items-center space-x-3">
-                  <ShieldAlert className="w-4 h-4 text-indigo-400" />
+                  <ShieldAlert className="w-4 h-4 text-black" />
                   <div>
-                    <div className="text-xs font-semibold text-slate-200">Face Visible in Frame</div>
-                    <div className="text-[10px] text-slate-400">Position head in the guide ring</div>
+                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-black">Face Visible in Frame</div>
+                    <div className="text-[10px] text-neutral-600 font-mono">Single face required</div>
                   </div>
                 </div>
                 {faceDetected ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle2 className="w-4 h-4 text-black" />
                 ) : (
-                  <span className="text-[10px] font-semibold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">Waiting</span>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.12em] bg-black text-white px-2 py-0.5">Pending</span>
                 )}
               </div>
 
               {/* Check 3: Microphone */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+              <div className="flex items-center justify-between p-3">
                 <div className="flex items-center space-x-3">
-                  <Volume2 className="w-4 h-4 text-cyan-400" />
+                  <Volume2 className="w-4 h-4 text-black" />
                   <div>
-                    <div className="text-xs font-semibold text-slate-200">Microphone Input</div>
-                    <div className="text-[10px] text-slate-400">Audio capture enabled</div>
+                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-black">Microphone Input</div>
+                    <div className="text-[10px] text-neutral-600 font-mono">Audio meter active</div>
                   </div>
                 </div>
                 {micGranted ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle2 className="w-4 h-4 text-black" />
                 ) : (
-                  <XCircle className="w-4 h-4 text-red-400" />
+                  <span className="w-2 h-2 bg-[#c90000]"></span>
                 )}
               </div>
 
               {/* Check 4: Network Connectivity */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+              <div className="flex items-center justify-between p-3">
                 <div className="flex items-center space-x-3">
-                  <Wifi className="w-4 h-4 text-emerald-400" />
+                  <Wifi className="w-4 h-4 text-black" />
                   <div>
-                    <div className="text-xs font-semibold text-slate-200">Network Connectivity</div>
-                    <div className="text-[10px] text-slate-400">Latency: {networkPing ? `${networkPing} ms` : 'Checking...'}</div>
+                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-black">Network Latency</div>
+                    <div className="text-[10px] text-neutral-600 font-mono">{networkPing ? `${networkPing} ms` : 'Evaluating...'}</div>
                   </div>
                 </div>
                 {networkOk ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle2 className="w-4 h-4 text-black" />
                 ) : (
-                  <XCircle className="w-4 h-4 text-red-400" />
+                  <span className="w-2 h-2 bg-[#c90000]"></span>
                 )}
               </div>
 
               {/* Check 5: Fullscreen Mode */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+              <div className="flex items-center justify-between p-3">
                 <div className="flex items-center space-x-3">
-                  <Maximize className="w-4 h-4 text-purple-400" />
+                  <Maximize className="w-4 h-4 text-black" />
                   <div>
-                    <div className="text-xs font-semibold text-slate-200">Fullscreen Locked</div>
-                    <div className="text-[10px] text-slate-400">Required during assessment</div>
+                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-black">Fullscreen Locked</div>
+                    <div className="text-[10px] text-neutral-600 font-mono">Required during exam</div>
                   </div>
                 </div>
                 {fullscreenOk ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle2 className="w-4 h-4 text-black" />
                 ) : (
                   <button
                     onClick={requestFullscreen}
-                    className="px-2.5 py-1 text-[11px] font-semibold bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 rounded-lg transition"
+                    className="px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] bg-black text-white hover:bg-neutral-800 transition cursor-pointer"
                   >
-                    Enter Fullscreen
+                    Lock Fullscreen
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Assessment Rules & Privacy Consent */}
-            <div className="mt-6 pt-5 border-t border-slate-800 space-y-3">
-              <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-800/40 text-[11px] text-purple-200 leading-relaxed">
-                <div className="font-bold text-purple-300 flex items-center gap-1.5 mb-1 text-xs">
-                  <span>🛡️</span>
-                  <span>External Activity & Prompt Monitoring Disclosure</span>
-                </div>
-                During active assessments, external website visits (e.g. ChatGPT, Claude, search engines) and submitted AI prompts/queries are monitored and recorded into the proctoring audit log. Assessments will continue running without blocking or termination, and collected telemetry will be submitted solely for academic review.
+            {/* Assessment Security Directive Callout */}
+            <div className="mt-5 border-2 border-black p-4 bg-[#f0f0f0] text-xs leading-relaxed">
+              <div className="font-bold uppercase tracking-[0.12em] flex items-center gap-2 mb-2 pb-2 border-b-2 border-black">
+                <span className={`w-2 h-2 ${assessment.policy.aiUsage === 'allowed' ? 'bg-black' : 'bg-[#c90000]'}`} />
+                <span>
+                  {assessment.policy.aiUsage === 'allowed'
+                    ? 'AI PERMITTED — CANDIDATE PROMPTS AUDITED'
+                    : 'AI PROHIBITED — STRICT INTEGRITY ENVIRONMENT'}
+                </span>
               </div>
+              {assessment.policy.aiUsage === 'allowed' ? (
+                <p className="text-neutral-800">
+                  You are permitted to interact with supported AI tools. Prompts and responses will be logged and displayed to evaluators. AI usage is <strong>not</strong> treated as a violation.
+                </p>
+              ) : (
+                <p className="text-neutral-800">
+                  AI tools and unauthorized tab switches are strictly <strong>prohibited</strong>. Policy handling is set to <strong>{(assessment.policy.violationHandling || 'terminate').toUpperCase()}</strong>. Infractions will record critical violation events.
+                </p>
+              )}
+            </div>
 
+            {/* Candidate Consent Checkbox */}
+            <div className="mt-4 pt-4 border-t-2 border-black">
               <label className="flex items-start space-x-3 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={rulesAccepted}
                   onChange={(e) => setRulesAccepted(e.target.checked)}
-                  className="mt-1 w-4 h-4 rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+                  className="mt-0.5 w-4 h-4 border-2 border-black bg-white text-black focus:ring-0 focus:outline-none"
                 />
-                <span className="text-xs text-slate-300 leading-normal">
-                  I acknowledge and consent to active assessment proctoring (camera presence, application focus, and external website/AI prompt auditing), and confirm my identity as <strong className="text-white">{user?.name}</strong>.
+                <span className="text-xs text-neutral-800 leading-normal font-medium">
+                  I confirm my identity as <strong className="font-bold text-black">{user?.name}</strong> and consent to active proctoring monitoring according to this assessment's security policy.
                 </span>
               </label>
             </div>
 
-            {/* Launch Assessment Action */}
+            {/* Proceed Action Button */}
             <div className="mt-6">
               <button
                 disabled={!allChecksPassed}
                 onClick={onProceed}
-                className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center space-x-2 text-sm"
+                className="w-full py-3.5 bg-black hover:bg-neutral-800 text-white font-bold border-2 border-black text-xs uppercase tracking-[0.12em] transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
               >
                 <span>All Checks Passed — Begin Assessment</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
               {!allChecksPassed && (
-                <p className="text-[11px] text-center text-slate-500 mt-2">
-                  Complete all checks above and accept the guidelines to start.
+                <p className="text-[11px] text-center text-neutral-600 uppercase tracking-[0.12em] mt-2 font-bold">
+                  Complete all 5 hardware checks and consent above to unlock.
                 </p>
               )}
             </div>

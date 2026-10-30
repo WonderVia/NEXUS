@@ -278,16 +278,42 @@ export async function seedDatabase() {
   insertUser.run(adminId, 'Dr. Sarah Mitchell (Administrator)', 'admin@wuelev8.com', adminPasswordHash, 'admin', now);
   insertUser.run(studentId, 'Alex Chen (Student)', 'student@wuelev8.com', studentPasswordHash, 'student', now);
 
-  // Policy configuration
-  const policy = JSON.stringify({
+  // Policy configuration for Scenario B: Strict DSA / Independent Coding Assessment
+  const dsaPolicy = JSON.stringify({
     maxMinorViolations: 3,
-    maxTotalViolations: 6,
+    maxTotalViolations: 5,
     faceAbsenceTimeoutSec: 7,
     focusLossAllowanceSec: 4,
     requireFullscreen: true,
     requireWebcam: true,
     requireMicrophone: false,
-    autoSubmitOnCriticalViolations: false
+    autoSubmitOnCriticalViolations: true,
+    // Assessment Security Settings (Admin Configurable)
+    aiUsage: 'prohibited',
+    aiPromptMonitoring: 'disabled',
+    tabSwitchingPolicy: 'restrict',
+    externalResourceAccess: 'restricted',
+    permittedWebsites: [],
+    violationHandling: 'terminate'
+  });
+
+  // Policy configuration for Scenario A: Prompt Engineering Interview (AI Allowed, Prompts Monitored)
+  const promptEngPolicy = JSON.stringify({
+    maxMinorViolations: 5,
+    maxTotalViolations: 10,
+    faceAbsenceTimeoutSec: 10,
+    focusLossAllowanceSec: 6,
+    requireFullscreen: false,
+    requireWebcam: true,
+    requireMicrophone: false,
+    autoSubmitOnCriticalViolations: false,
+    // Assessment Security Settings (Admin Configurable)
+    aiUsage: 'allowed',
+    aiPromptMonitoring: 'enabled',
+    tabSwitchingPolicy: 'warn',
+    externalResourceAccess: 'allowed',
+    permittedWebsites: ['chatgpt.com', 'openai.com', 'claude.ai', 'gemini.google.com', 'perplexity.ai'],
+    violationHandling: 'record_only'
   });
 
   // Insert Assessment
@@ -296,6 +322,7 @@ export async function seedDatabase() {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
+  // Scenario B Assessment (Strict)
   insertAssessment.run(
     assessmentId,
     'National Graduate Aptitude & Technical Assessment (NGATA 2026)',
@@ -304,7 +331,21 @@ export async function seedDatabase() {
     'active',
     100,
     40,
-    policy,
+    dsaPolicy,
+    now
+  );
+
+  // Scenario A Assessment (Prompt Engineering - AI Allowed & Monitored)
+  const promptEngAssessmentId = 'assessment-prompt-eng';
+  insertAssessment.run(
+    promptEngAssessmentId,
+    'AI & Prompt Engineering Technical Assessment',
+    'Interactive practical assessment evaluating prompt engineering techniques, problem decomposition, and AI-assisted technical workflows. AI tools are permitted and interactions are monitored for evaluation.',
+    30, // 30 minutes
+    'active',
+    100,
+    50,
+    promptEngPolicy,
     now
   );
 
@@ -313,10 +354,11 @@ export async function seedDatabase() {
   db.prepare(`DELETE FROM proctoring_events`).run();
   db.prepare(`DELETE FROM attempts`).run();
 
-  // Clear existing questions for this assessment
+  // Clear existing questions for both assessments
   db.prepare(`DELETE FROM questions WHERE assessmentId = ?`).run(assessmentId);
+  db.prepare(`DELETE FROM questions WHERE assessmentId = ?`).run(promptEngAssessmentId);
 
-  // Insert 20 Questions
+  // Insert Questions
   const insertQuestion = db.prepare(`
     INSERT INTO questions (id, assessmentId, questionText, options, correctAnswer, explanation, category, orderIndex)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -335,9 +377,78 @@ export async function seedDatabase() {
     );
   });
 
+  // Questions for Scenario A: Prompt Engineering Assessment
+  const PROMPT_ENG_QUESTIONS = [
+    {
+      category: 'Prompt Engineering',
+      questionText: 'Which prompting technique provides one or more input-output examples directly in the context to guide the model format and output?',
+      options: ['Zero-Shot Prompting', 'Few-Shot Prompting', 'Directional Stimulus Prompting', 'Prefix Prompting'],
+      correctAnswer: 1,
+      explanation: 'Few-Shot prompting provides demonstrations/examples in the prompt to condition the model to follow specific formatting and reasoning patterns.'
+    },
+    {
+      category: 'Prompt Engineering',
+      questionText: 'What is Chain-of-Thought (CoT) prompting primarily designed to accomplish?',
+      options: [
+        'Speed up LLM generation latency',
+        'Break complex multi-step reasoning problems into intermediate reasoning steps',
+        'Compress prompt tokens to save context window size',
+        'Directly execute Python code inside the language model weights'
+      ],
+      correctAnswer: 1,
+      explanation: 'Chain-of-Thought prompting encourages the model to generate intermediate steps of reasoning before producing the final answer, dramatically improving performance on complex logic and math.'
+    },
+    {
+      category: 'AI Architecture',
+      questionText: 'When developing production LLM pipelines, which parameter adjustment is most effective for ensuring repeatable, deterministic answers for automated unit tests?',
+      options: ['Set temperature close to 0.0', 'Set top_k to maximum value (e.g. 1000)', 'Increase frequency_penalty to 2.0', 'Double the max_tokens parameter'],
+      correctAnswer: 0,
+      explanation: 'Setting temperature to 0.0 (or greedy decoding) selects the token with highest probability at each step, yielding the most deterministic, reproducible outputs.'
+    },
+    {
+      category: 'Prompt Engineering',
+      questionText: 'To mitigate hallucinations when using LLMs for factual summarization, which prompt design strategy is most reliable?',
+      options: [
+        'Tell the model to assume all input is true without verification',
+        'Provide grounded source documents and instruct the model to answer strictly using the provided context and state "Information not found" if missing',
+        'Prompt the model in all capital letters',
+        'Increase model temperature to 1.5'
+      ],
+      correctAnswer: 1,
+      explanation: 'Grounded generation (RAG style) with explicit boundary instructions ("Answer strictly based on the provided text; say not found if missing") significantly reduces hallucinations.'
+    },
+    {
+      category: 'System Design with AI',
+      questionText: 'What is the primary role of the "System" prompt in modern chat-based AI APIs (such as OpenAI or Anthropic)?',
+      options: [
+        'It is discarded by the tokenizer and used only for internal telemetry',
+        'It defines the high-level persona, security boundaries, behavioral constraints, and instructions that govern the conversation',
+        'It functions identically to user inputs and has no special priority',
+        'It acts as the database cache key'
+      ],
+      correctAnswer: 1,
+      explanation: 'The system message sets high-level instructions, rules, constraints, and operational personas that guide the model throughout subsequent user turns.'
+    }
+  ];
+
+  PROMPT_ENG_QUESTIONS.forEach((q, index) => {
+    insertQuestion.run(
+      `q-prompt-${String(index + 1).padStart(3, '0')}`,
+      promptEngAssessmentId,
+      q.questionText,
+      JSON.stringify(q.options),
+      q.correctAnswer,
+      q.explanation,
+      q.category,
+      index + 1
+    );
+  });
+
   console.log(`Successfully seeded:`);
   console.log(`  - 2 Demo Users (admin@wuelev8.com / Admin@123, student@wuelev8.com / Student@123)`);
-  console.log(`  - 1 Active Assessment (${assessmentId})`);
+  console.log(`  - Assessment B: NGATA 2026 (${assessmentId}) - AI Prohibited, Tab Restrict`);
+  console.log(`  - Assessment A: Prompt Engineering (${promptEngAssessmentId}) - AI Allowed, Prompts Monitored`);
+  console.log(`  - ${SEED_QUESTIONS.length + PROMPT_ENG_QUESTIONS.length} Verified Questions with detailed explanations.`);
   console.log(`  - ${SEED_QUESTIONS.length} Verified Questions with detailed explanations across 5 CS domains.`);
 }
 

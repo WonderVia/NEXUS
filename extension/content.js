@@ -243,11 +243,81 @@
     }
   }
 
+  let currentAssessmentPolicy = null;
+
+  function refreshPolicy() {
+    try {
+      chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (res) => {
+        if (chrome.runtime.lastError) return;
+        if (res && res.policy) {
+          currentAssessmentPolicy = res.policy;
+          applyPolicyRestrictions();
+        }
+      });
+    } catch {}
+  }
+
+  function applyPolicyRestrictions() {
+    if (!currentAssessmentPolicy) return;
+    const isAi = !platformConfig.isSearchEngine;
+
+    if (isAi && currentAssessmentPolicy.aiUsage === 'prohibited') {
+      showProhibitedBanner(platformConfig.label);
+    } else {
+      const banner = document.getElementById('wuelev8-prohibited-banner');
+      if (banner) banner.remove();
+    }
+  }
+
+  function showProhibitedBanner(platform) {
+    if (document.getElementById('wuelev8-prohibited-banner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'wuelev8-prohibited-banner';
+    banner.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 2147483647;
+      background: linear-gradient(90deg, #7f1d1d, #b91c1c);
+      color: #ffffff;
+      padding: 10px 18px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      border-bottom: 2px solid #ef4444;
+    `;
+    banner.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 18px;">⚠️</span>
+        <span><strong>PROCTORING ALERT:</strong> AI usage (${platform}) is <strong>PROHIBITED</strong> for this assessment. Submitting prompts will result in immediate violation penalties.</span>
+      </div>
+      <span style="background: rgba(0,0,0,0.3); padding: 3px 8px; border-radius: 6px; font-size: 11px;">WUElev8 Security</span>
+    `;
+    document.body.prepend(banner);
+  }
+
+  refreshPolicy();
+  setInterval(refreshPolicy, 4000);
+
   // Submit Prompt to Background Service Worker
   function submitPrompt(promptText, isSearch = false) {
     if (!promptText || typeof promptText !== 'string') return;
     const cleaned = promptText.trim();
     if (cleaned.length === 0) return;
+
+    // Check if AI is allowed and prompt monitoring is disabled
+    const policy = currentAssessmentPolicy;
+    if (!isSearch && policy) {
+      if (policy.aiUsage === 'allowed' && policy.aiPromptMonitoring === 'disabled') {
+        console.log('[WUElev8 Proctor] AI prompt monitoring disabled by exam policy. Skipping transmission.');
+        return;
+      }
+    }
 
     // Deduplication within 3 seconds
     const now = Date.now();
@@ -259,7 +329,9 @@
     lastReportedPrompt = cleaned;
     lastReportedTimestamp = now;
 
-    console.log(`[WUElev8 Proctor] Forwarding ${isSearch ? 'Search Query' : 'AI Prompt'} (${cleaned.length} chars) to background worker`);
+    const isProhibited = !isSearch && policy?.aiUsage === 'prohibited';
+
+    console.log(`[WUElev8 Proctor] Forwarding ${isSearch ? 'Search Query' : (isProhibited ? 'Prohibited AI Prompt' : 'AI Prompt')} (${cleaned.length} chars) to background worker`);
 
     try {
       chrome.runtime.sendMessage({
@@ -279,11 +351,11 @@
       console.error('[WUElev8 Proctor] Failed to send prompt to extension:', err);
     }
 
-    // Show non-blocking indicator
-    showSubtleNotification(platformConfig.label, cleaned);
+    // Show indicator
+    showSubtleNotification(platformConfig.label, cleaned, isProhibited);
 
-    // If AI platform, monitor for observable response
-    if (platformConfig.assistantSelectors) {
+    // If AI platform and permitted, monitor for observable response
+    if (platformConfig.assistantSelectors && !isProhibited) {
       startResponseMonitoring();
     }
   }
@@ -359,8 +431,8 @@
     }
   }
 
-  // Non-intrusive micro toast (does not block student)
-  function showSubtleNotification(platform, query) {
+  // Micro toast notification (styled differently for permitted vs prohibited)
+  function showSubtleNotification(platform, query, isProhibited = false) {
     const existing = document.getElementById('wuelev8-proctor-toast');
     if (existing) existing.remove();
 
@@ -371,9 +443,9 @@
       bottom: 24px;
       right: 24px;
       z-index: 2147483647;
-      background: #0f172a;
+      background: ${isProhibited ? '#450a0a' : '#0f172a'};
       color: #f8fafc;
-      border: 1px solid #6366f1;
+      border: 1px solid ${isProhibited ? '#ef4444' : '#6366f1'};
       border-radius: 12px;
       padding: 10px 16px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -382,18 +454,24 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
       pointer-events: none;
       opacity: 0;
       transition: opacity 0.3s ease;
     `;
 
     const preview = query.length > 40 ? query.substring(0, 40) + '...' : query;
-    toast.innerHTML = `
+    toast.innerHTML = isProhibited ? `
+      <span style="font-size:18px;">⚠️</span>
+      <div>
+        <strong style="color:#f87171;">Prohibited Action Recorded:</strong>
+        <span style="color:#fecaca;"> ${platform} prompt flagged as violation: "${preview}"</span>
+      </div>
+    ` : `
       <span style="font-size:16px;">🛡️</span>
       <div>
         <strong style="color:#a5b4fc;">WUElev8 Assessment Shield:</strong>
-        <span style="color:#cbd5e1;"> ${platform} prompt captured: "${preview}"</span>
+        <span style="color:#cbd5e1;"> ${platform} prompt recorded for review: "${preview}"</span>
       </div>
     `;
 
@@ -403,7 +481,7 @@
     setTimeout(() => {
       toast.style.opacity = '0';
       setTimeout(() => { if (toast.parentNode) toast.remove(); }, 350);
-    }, 3500);
+    }, 3800);
   }
 
   // Initial URL query check

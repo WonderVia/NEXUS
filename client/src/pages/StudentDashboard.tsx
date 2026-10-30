@@ -36,77 +36,83 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectAsse
   }, []);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-white text-black">
       
-      {/* Student Welcome & Profile Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-slate-900/50 border border-slate-800 p-6 sm:p-8 mb-8 backdrop-blur-xl shadow-xl">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white text-2xl font-black shadow-lg shadow-blue-500/25">
-              {user?.name.charAt(0)}
+      {/* 12-Column Swiss Candidate Header Section */}
+      <div className="border-2 border-black bg-white p-6 sm:p-8 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          <div className="lg:col-span-8">
+            <div className="text-[11px] font-bold tracking-[0.12em] uppercase text-black mb-3 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 bg-[#c90000] inline-block"></span>
+              <span>01 / CANDIDATE IDENTITY & VERIFICATION RECORD</span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-                  Welcome back, {user?.name}
-                </h1>
-                <span className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Verified Candidate
-                </span>
-              </div>
-              <p className="text-sm text-slate-400 mt-1">
-                Candidate ID: <span className="font-mono text-slate-300">{user?.id}</span> • {user?.email}
-              </p>
+            
+            <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tighter uppercase leading-[0.95] text-black mb-3">
+              {user?.name}
+            </h1>
+
+            <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-800">
+              <span className="font-mono bg-[#f0f0f0] border-2 border-black px-2.5 py-1 font-bold">
+                ID: {user?.id}
+              </span>
+              <span className="font-mono bg-[#f0f0f0] border-2 border-black px-2.5 py-1 font-bold">
+                {user?.email}
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-black text-white text-[11px] font-bold uppercase tracking-[0.12em]">
+                <ShieldCheck className="w-3.5 h-3.5" /> VERIFIED CANDIDATE
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="lg:col-span-4 flex lg:justify-end items-center">
             <button
               onClick={fetchAssessments}
-              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700/80 text-slate-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition"
+              className="px-4 py-2.5 bg-white hover:bg-black hover:text-white text-black border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-2 transition cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               <span>Refresh Status</span>
             </button>
           </div>
-        </div>
 
-        {/* Decorative background glow */}
-        <div className="absolute -right-16 -top-16 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        </div>
       </div>
 
-      {/* Main Section Header */}
-      <div className="flex items-center justify-between mb-6">
+      {/* Main Section Header with Index Rail */}
+      <div className="flex items-center justify-between border-b-2 border-black pb-3 mb-6">
         <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-blue-400" /> Available Assessments
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Select an assessment to begin the pre-flight proctoring verification check.
+          <div className="text-[11px] font-bold tracking-[0.12em] uppercase text-black flex items-center gap-2">
+            <span className="w-2 h-2 bg-black inline-block"></span>
+            <span>02 / AVAILABLE ASSESSMENTS MATRIX</span>
+          </div>
+          <p className="text-xs text-neutral-600 mt-1 font-medium">
+            Select an assessment to initialize the pre-flight proctoring verification check.
           </p>
         </div>
       </div>
 
       {/* Error state */}
       {error && (
-        <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-between text-sm text-red-300">
+        <div className="mb-6 p-4 bg-[#f0f0f0] border-2 border-[#c90000] flex items-center justify-between text-xs text-black">
           <div className="flex items-center space-x-2">
-            <AlertCircle className="w-5 h-5 text-red-400" />
-            <span>{error}</span>
+            <span className="w-2.5 h-2.5 bg-[#c90000] inline-block"></span>
+            <span className="font-bold">{error}</span>
           </div>
-          <button onClick={fetchAssessments} className="text-xs underline font-semibold hover:text-white">Retry</button>
+          <button onClick={fetchAssessments} className="text-xs uppercase tracking-[0.12em] underline font-bold hover:text-[#c90000]">
+            Retry
+          </button>
         </div>
       )}
 
       {/* Loading state */}
       {isLoading && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {[1, 2].map((n) => (
-            <div key={n} className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 animate-pulse">
-              <div className="h-5 bg-slate-800 rounded w-2/3 mb-4"></div>
-              <div className="h-4 bg-slate-800 rounded w-full mb-2"></div>
-              <div className="h-4 bg-slate-800 rounded w-4/5 mb-6"></div>
-              <div className="h-10 bg-slate-800 rounded-xl"></div>
+            <div key={n} className="border-2 border-black p-6 bg-[#f0f0f0]">
+              <div className="h-6 bg-neutral-300 w-2/3 mb-4"></div>
+              <div className="h-4 bg-neutral-300 w-full mb-2"></div>
+              <div className="h-4 bg-neutral-300 w-4/5 mb-6"></div>
+              <div className="h-10 bg-neutral-300"></div>
             </div>
           ))}
         </div>
@@ -125,63 +131,68 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectAsse
             return (
               <div
                 key={assessment.id}
-                className="bg-slate-900/70 border border-slate-800/90 hover:border-slate-700/80 rounded-2xl p-6 transition shadow-lg flex flex-col justify-between"
+                className="border-2 border-black bg-white p-6 flex flex-col justify-between"
               >
                 <div>
                   {/* Top Badges */}
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                      National Hackathon MVP
-                    </span>
+                  <div className="flex items-center justify-between gap-2 mb-4 border-b-2 border-black pb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[11px] px-2 py-0.5 font-bold uppercase tracking-[0.12em] bg-black text-white">
+                        WUElev8
+                      </span>
+                      {assessment.policy.aiUsage === 'allowed' ? (
+                        <span className="text-[11px] px-2 py-0.5 font-bold uppercase tracking-[0.12em] bg-[#f0f0f0] border-2 border-black text-black">
+                          AI Allowed (Monitored)
+                        </span>
+                      ) : (
+                        <span className="text-[11px] px-2 py-0.5 font-bold uppercase tracking-[0.12em] bg-black text-white flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-[#c90000] inline-block"></span>
+                          AI Prohibited
+                        </span>
+                      )}
+                    </div>
 
                     {/* Attempt Status Badge */}
                     {isCompleted ? (
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        isPassed 
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                      }`}>
+                      <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] border-2 border-black bg-[#f0f0f0] text-black">
                         <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
                         Completed ({scorePct}%)
                       </span>
                     ) : isInProgress ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
+                      <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] bg-black text-white">
                         <Clock className="w-3.5 h-3.5 mr-1" /> In Progress
                       </span>
                     ) : (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                      <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] border-2 border-black bg-white text-black">
                         Ready to Start
                       </span>
                     )}
                   </div>
 
-                  <h3 className="text-lg font-bold text-white mb-2 leading-snug">
+                  <h3 className="text-xl sm:text-2xl font-extrabold tracking-tight text-black mb-2 uppercase leading-tight">
                     {assessment.title}
                   </h3>
-                  <p className="text-xs text-slate-400 line-clamp-2 mb-5">
+                  <p className="text-xs text-neutral-700 line-clamp-2 mb-5 leading-relaxed">
                     {assessment.description}
                   </p>
 
-                  {/* Assessment Info Pill Bar */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-950/60 border border-slate-800/80 rounded-xl p-3 mb-6 text-center">
-                    <div>
-                      <div className="text-[11px] text-slate-500 uppercase font-semibold">Questions</div>
-                      <div className="text-sm font-bold text-slate-200 mt-0.5 flex items-center justify-center gap-1">
-                        <FileText className="w-3.5 h-3.5 text-blue-400" />
+                  {/* Assessment Ruled Specs Matrix */}
+                  <div className="grid grid-cols-3 border-2 border-black bg-[#f0f0f0] divide-x-2 divide-black mb-6 text-center">
+                    <div className="p-2.5">
+                      <div className="text-[10px] text-neutral-600 uppercase font-bold tracking-[0.12em]">Questions</div>
+                      <div className="text-base font-extrabold text-black mt-0.5">
                         {assessment.questionCount || 20}
                       </div>
                     </div>
-                    <div className="border-x border-slate-800">
-                      <div className="text-[11px] text-slate-500 uppercase font-semibold">Duration</div>
-                      <div className="text-sm font-bold text-slate-200 mt-0.5 flex items-center justify-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                    <div className="p-2.5">
+                      <div className="text-[10px] text-neutral-600 uppercase font-bold tracking-[0.12em]">Duration</div>
+                      <div className="text-base font-extrabold text-black mt-0.5">
                         {assessment.durationMinutes} Mins
                       </div>
                     </div>
-                    <div>
-                      <div className="text-[11px] text-slate-500 uppercase font-semibold">Pass Mark</div>
-                      <div className="text-sm font-bold text-slate-200 mt-0.5 flex items-center justify-center gap-1">
-                        <Award className="w-3.5 h-3.5 text-emerald-400" />
+                    <div className="p-2.5">
+                      <div className="text-[10px] text-neutral-600 uppercase font-bold tracking-[0.12em]">Pass Mark</div>
+                      <div className="text-base font-extrabold text-black mt-0.5">
                         {assessment.passMarks}%
                       </div>
                     </div>
@@ -189,10 +200,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectAsse
                 </div>
 
                 {/* Card Actions */}
-                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between">
+                <div className="pt-4 border-t-2 border-black flex flex-wrap items-center justify-between gap-3">
                   <button
                     onClick={() => setSelectedPolicyModal(assessment)}
-                    className="text-xs text-slate-400 hover:text-blue-400 flex items-center gap-1 transition"
+                    className="text-xs font-bold text-black uppercase tracking-[0.12em] underline hover:text-[#c90000] flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <HelpCircle className="w-3.5 h-3.5" /> View Proctoring Rules
                   </button>
@@ -201,14 +212,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectAsse
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => onSelectAssessment(assessment, 'review')}
-                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700/80 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+                        className="px-3.5 py-2 bg-white hover:bg-black hover:text-white text-black border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>Review</span>
                       </button>
                       <button
                         onClick={() => onSelectAssessment(assessment, 'take', true)}
-                        className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-blue-500/20 transition"
+                        className="px-3.5 py-2 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
                         <span>Retake Test</span>
@@ -217,7 +228,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectAsse
                   ) : isInProgress ? (
                     <button
                       onClick={() => onSelectAssessment(assessment, 'take')}
-                      className="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-amber-500/20 transition"
+                      className="px-4 py-2.5 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-2 transition cursor-pointer"
                     >
                       <span>Resume Assessment</span>
                       <ChevronRight className="w-3.5 h-3.5" />
@@ -225,7 +236,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectAsse
                   ) : (
                     <button
                       onClick={() => onSelectAssessment(assessment, 'take')}
-                      className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-blue-500/20 transition"
+                      className="px-5 py-2.5 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-2 transition cursor-pointer"
                     >
                       <span>Start Assessment</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -240,40 +251,69 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onSelectAsse
 
       {/* Proctoring Policy Modal */}
       {selectedPolicyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-3xl p-6 shadow-2xl">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-                <ShieldCheck className="w-5 h-5" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-lg bg-white border-2 border-black p-6 sm:p-8">
+            <div className="flex items-center space-x-3 mb-4 border-b-2 border-black pb-3">
+              <div className="w-8 h-8 bg-black flex items-center justify-center text-white">
+                <ShieldCheck className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="font-bold text-white text-base">Assessment Proctoring Guidelines</h3>
-                <p className="text-xs text-slate-400">{selectedPolicyModal.title}</p>
+                <h3 className="font-extrabold text-black text-base uppercase tracking-tight">Proctoring Guidelines</h3>
+                <p className="text-xs text-neutral-600 font-mono">{selectedPolicyModal.title}</p>
               </div>
             </div>
 
-            <div className="space-y-3 text-xs text-slate-300 my-4 bg-slate-950/70 p-4 rounded-2xl border border-slate-800">
-              <div className="flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span><strong>Webcam Verification:</strong> Live computer vision continuously verifies your face presence. Ensure good lighting.</span>
+            <div className="space-y-3 text-xs text-black my-4 bg-[#f0f0f0] p-4 border-2 border-black divide-y-2 divide-black">
+              <div className="pt-2 first:pt-0">
+                <div className="font-bold uppercase tracking-[0.12em] mb-1 flex items-center gap-1.5">
+                  <span className={`w-2 h-2 ${selectedPolicyModal.policy.aiUsage === 'allowed' ? 'bg-black' : 'bg-[#c90000]'}`} />
+                  AI Usage Policy
+                </div>
+                <p className="text-neutral-800">
+                  {selectedPolicyModal.policy.aiUsage === 'allowed'
+                    ? 'AI usage is permitted for this assessment. Supported tools (ChatGPT, Claude) can be accessed. Candidate prompt formulations are recorded for evaluation.'
+                    : 'AI tools are strictly PROHIBITED for this assessment. Any attempt to access AI platforms will trigger violation flags.'}
+                </p>
               </div>
-              <div className="flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span><strong>Window Focus:</strong> Switching tabs, minimizing the browser, or opening background applications will trigger automated focus-loss audit logs.</span>
+
+              <div className="pt-3">
+                <div className="font-bold uppercase tracking-[0.12em] mb-1 flex items-center gap-1.5">
+                  <span className="w-2 h-2 bg-black" />
+                  Tab Switching Policy: {(selectedPolicyModal.policy.tabSwitchingPolicy || 'warn').toUpperCase()}
+                </div>
+                <p className="text-neutral-800">
+                  {selectedPolicyModal.policy.tabSwitchingPolicy === 'restrict'
+                    ? 'Leaving the exam window is restricted and recorded as a violation.'
+                    : 'Switching tabs will trigger alert warnings.'}
+                </p>
               </div>
-              <div className="flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span><strong>Fullscreen Mode:</strong> The assessment runs strictly in locked fullscreen. Exiting fullscreen logs a security event.</span>
+
+              <div className="pt-3">
+                <div className="font-bold uppercase tracking-[0.12em] mb-1 flex items-center gap-1.5">
+                  <span className="w-2 h-2 bg-black" />
+                  Webcam Computer Vision
+                </div>
+                <p className="text-neutral-800">
+                  Live computer vision continuously verifies your face presence. Ensure adequate ambient lighting and clear camera view.
+                </p>
               </div>
-              <div className="flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span><strong>Explainable Audit:</strong> Technical signals are recorded for manual human review; no candidate is disqualified arbitrarily.</span>
+
+              <div className="pt-3">
+                <div className="font-bold uppercase tracking-[0.12em] mb-1 flex items-center gap-1.5">
+                  <span className="w-2 h-2 bg-[#c90000]" />
+                  Violation Handling: {(selectedPolicyModal.policy.violationHandling || 'warn').replace('_', ' ').toUpperCase()}
+                </div>
+                <p className="text-neutral-800">
+                  {selectedPolicyModal.policy.violationHandling === 'terminate'
+                    ? 'Reaching maximum permitted violations will automatically submit the exam and record an infraction.'
+                    : 'Violations are recorded in the candidate audit timeline for admin review.'}
+                </p>
               </div>
             </div>
 
             <button
               onClick={() => setSelectedPolicyModal(null)}
-              className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold transition"
+              className="w-full py-3 bg-black hover:bg-neutral-800 text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] transition cursor-pointer"
             >
               Understood & Close
             </button>

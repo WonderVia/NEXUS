@@ -213,18 +213,36 @@ Follow this 15-step sequence during the live hackathon demonstration:
 | **Admin Console** | Mark Event as Reviewed / Confirmed | **Implemented** | Real database mutation with reviewer note |
 | **Admin Console** | Question Bank Editor (Add / Delete) | **Implemented** | Dynamic question management |
 | **Admin Console** | Policy Configurator | **Implemented** | Adjust duration, timeout, and max violations |
+| **Admin Console** | Assessment Security Settings Section | **Implemented** | Configure AI Usage, Prompt Audit, Tab Policy, Permitted Sites, Action |
+| **Assessment Policy** | Scenario A: Prompt Engineering Interview | **Implemented** | AI Allowed, Prompts Monitored, No Violations on AI usage |
+| **Assessment Policy** | Scenario B: Strict Coding / DSA Assessment | **Implemented** | AI Prohibited, Tabs Restricted, Termination on limit |
 | **Admin Console** | CSV Export for Scores & Events | **Implemented** | Standard RFC 4180 CSV downloadable endpoints |
 
 ---
 
-## 9. Automated Testing
+## 9. Assessment Security Settings & Dual-Scenario Architecture
 
-Run the automated Vitest test suite covering authentication, question security, attempt scoring, proctoring events, and CSV export:
+The WUElev8 Smart Proctoring platform gives administrators granular, per-assessment control over AI tool usage and external application policies:
+
+| Security Setting | Options | Behavior |
+| :--- | :--- | :--- |
+| **1. AI Usage** | `Allowed` \| `Prohibited` | Determines whether candidates can access supported AI tools (ChatGPT, Claude, Gemini, etc.). In `Allowed` mode, AI tool access is permitted. In `Prohibited` mode, attempts to visit AI tools trigger violations. |
+| **2. AI Prompt Monitoring** | `Enabled` \| `Disabled` | When enabled, prompts submitted by candidates and assistant responses are captured by the browser companion and displayed in the Admin Dashboard audit stream. When disabled, prompt interception is silenced. |
+| **3. Tab Switching Policy** | `Allowed` \| `Warn` \| `Restrict` | `Allowed`: tab switches recorded as low-severity telemetry without warnings. `Warn`: candidate receives alert warnings to return to the exam window. `Restrict`: tab switches are logged as high-severity violations. |
+| **4. External Resource Access** | `Allowed` \| `Restricted` | `Allowed`: open web access. `Restricted`: candidates are constrained to institutional origins and explicitly configured `permittedWebsites` (e.g. `docs.python.org`). |
+| **5. Violation Handling** | `Record Only` \| `Warn Candidate` \| `Terminate Assessment` | `Record Only`: logs telemetry silently for proctor review. `Warn`: displays violation modals to candidates. `Terminate`: auto-submits and flags the exam when violation threshold is reached. |
+
+---
+
+## 10. Automated Testing
+
+Run the automated Vitest test suite covering authentication, question security, attempt scoring, proctoring events, and the new Assessment Security Settings:
 
 ```powershell
 npm test
 ```
 
 **Test Results:**
-- 16 / 16 integration & unit tests passing (0 failures).
-- Execution time: ~0.8s on local SQLite WAL.
+- 26 / 26 integration & unit tests passing (100% pass rate).
+- Full end-to-end verification of Scenario A (AI-allowed) and Scenario B (AI-prohibited) isolation and policy enforcement.
+- Execution time: ~1.1s on local SQLite WAL.

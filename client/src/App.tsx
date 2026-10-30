@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { Navbar } from './components/Navbar';
 import { LoginPage } from './pages/LoginPage';
 import { StudentDashboard } from './pages/StudentDashboard';
@@ -20,10 +21,10 @@ function MainApp() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#070b14] flex flex-col items-center justify-center text-white">
-        <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
-          Initializing Secure Proctor Environment...
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center text-black font-swiss">
+        <div className="w-8 h-8 border-2 border-black border-t-transparent animate-spin mb-4"></div>
+        <p className="text-xs font-bold uppercase tracking-[0.12em]">
+          [00] INITIALIZING SECURE PROCTOR ENVIRONMENT
         </p>
       </div>
     );
@@ -32,7 +33,7 @@ function MainApp() {
   // Not authenticated
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#070b14] flex flex-col">
+      <div className="min-h-screen bg-white text-black flex flex-col font-swiss">
         <Navbar />
         <LoginPage />
       </div>
@@ -42,7 +43,7 @@ function MainApp() {
   // Admin Portal
   if (user.role === 'admin') {
     return (
-      <div className="min-h-screen bg-[#070b14] flex flex-col">
+      <div className="min-h-screen bg-white text-black flex flex-col font-swiss">
         <Navbar />
         <main className="flex-1">
           <AdminDashboard />
@@ -81,7 +82,7 @@ function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070b14] flex flex-col">
+    <div className="min-h-screen bg-white text-black flex flex-col font-swiss">
       <Navbar 
         onNavigateHome={handleReturnToDashboard}
         isAssessmentActive={currentScreen === 'assessment'}
@@ -123,8 +124,10 @@ function MainApp() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <MainApp />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <MainApp />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
