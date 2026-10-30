@@ -143,13 +143,50 @@ export function initDatabase() {
       FOREIGN KEY (attemptId) REFERENCES attempts(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS answer_change_events (
+      id TEXT PRIMARY KEY,
+      attemptId TEXT NOT NULL,
+      questionId TEXT NOT NULL,
+      previousOption INTEGER,
+      selectedOption INTEGER NOT NULL,
+      localSequenceNumber INTEGER NOT NULL,
+      timestamp TEXT NOT NULL,
+      syncedAt TEXT,
+      FOREIGN KEY (attemptId) REFERENCES attempts(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_questions_assessmentId ON questions(assessmentId);
     CREATE INDEX IF NOT EXISTS idx_attempts_studentId ON attempts(studentId);
     CREATE INDEX IF NOT EXISTS idx_attempts_assessmentId ON attempts(assessmentId);
     CREATE INDEX IF NOT EXISTS idx_answers_attemptId ON answers(attemptId);
     CREATE INDEX IF NOT EXISTS idx_events_attemptId ON proctoring_events(attemptId);
     CREATE INDEX IF NOT EXISTS idx_events_severity ON proctoring_events(severity);
+    CREATE INDEX IF NOT EXISTS idx_answer_events_attemptId ON answer_change_events(attemptId);
   `);
+
+  // Safe schema migrations for existing SQLite databases
+  const ensureColumn = (table: string, column: string, definition: string) => {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+    } catch {
+      // Column already exists or table cannot be modified
+    }
+  };
+
+  ensureColumn('attempts', 'offlinePackageGeneratedAt', 'TEXT');
+  ensureColumn('attempts', 'lastSyncAt', 'TEXT');
+  ensureColumn('attempts', 'syncStatus', "TEXT DEFAULT 'online'");
+  ensureColumn('attempts', 'pendingSyncCount', 'INTEGER DEFAULT 0');
+  ensureColumn('attempts', 'clientReportedStatus', "TEXT DEFAULT 'online'");
+  ensureColumn('attempts', 'offlineDurationSeconds', 'INTEGER DEFAULT 0');
+  ensureColumn('attempts', 'policySnapshot', 'TEXT');
+
+  ensureColumn('answers', 'clientAnsweredAt', 'TEXT');
+  ensureColumn('answers', 'syncVersion', 'INTEGER DEFAULT 1');
+  ensureColumn('answers', 'localSequenceNumber', 'INTEGER DEFAULT 0');
+
+  ensureColumn('proctoring_events', 'localSequenceNumber', 'INTEGER DEFAULT 0');
+  ensureColumn('proctoring_events', 'isOfflineEvent', 'INTEGER DEFAULT 0');
 
   console.log('Database initialized successfully at:', dbPath);
 }

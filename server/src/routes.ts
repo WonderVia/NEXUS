@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { register, login, requestOtp, verifyOtp, getCurrentUser, getAllStudents } from './controllers/auth.js';
 import { listAssessments, getAssessmentById, createAssessment, updateAssessment } from './controllers/assessments.js';
 import { getQuestionsByAssessment, createQuestion, updateQuestion, deleteQuestion } from './controllers/questions.js';
-import { startAttempt, getAttemptById, saveAnswer, submitAttempt } from './controllers/attempts.js';
+import { startAttempt, getAttemptById, saveAnswer, submitAttempt, getOfflinePackage, syncAttemptBatch, getAttemptSyncStatus } from './controllers/attempts.js';
 import { logProctoringEvent, getAttemptEvents, reviewProctoringEvent, getActiveProctorSession, logExtensionEvent } from './controllers/proctoring.js';
 import { getAdminAnalytics, getAllAttempts, exportDataCsv, getAllProctoringEvents } from './controllers/analytics.js';
 import { authenticate, requireRole } from './middleware/auth.js';
@@ -34,6 +34,10 @@ router.post('/attempts', authenticate, startAttempt);
 router.get('/attempts/:id', authenticate, getAttemptById);
 router.post('/attempts/:id/answers', authenticate, saveAnswer);
 router.post('/attempts/:id/submit', authenticate, submitAttempt);
+router.get('/attempts/:id/package', authenticate, getOfflinePackage);
+router.post('/attempts/:id/offline-package', authenticate, getOfflinePackage);
+router.post('/attempts/:id/sync', authenticate, syncAttemptBatch);
+router.get('/attempts/:id/sync-status', authenticate, getAttemptSyncStatus);
 
 // --- Proctoring Routes ---
 router.post('/attempts/:id/events', authenticate, logProctoringEvent);

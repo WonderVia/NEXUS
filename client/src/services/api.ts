@@ -199,7 +199,30 @@ export const attemptsAPI = {
       submittedAt: string;
     }>(`/attempts/${attemptId}/submit`, {
       method: 'POST'
-    })
+    }),
+
+  getOfflinePackage: (attemptId: string) =>
+    request<{ ok: boolean; package: import('../types').OfflineAssessmentPackage }>(`/attempts/${attemptId}/offline-package`, {
+      method: 'POST'
+    }),
+
+  syncBatch: (attemptId: string, payload: any) =>
+    request<{
+      ok: boolean;
+      acceptedAnswerIds: string[];
+      acceptedEventIds: string[];
+      acceptedAnswerChangeIds: string[];
+      isFinalized: boolean;
+      status: string;
+      syncTimestamp: string;
+      clientReportedStatus?: string;
+    }>(`/attempts/${attemptId}/sync`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+
+  getSyncStatus: (attemptId: string) =>
+    request<import('../types').OfflineSyncStatus>(`/attempts/${attemptId}/sync-status`)
 };
 
 // Proctoring API

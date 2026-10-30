@@ -24,6 +24,10 @@ export interface ProctoringPolicy {
   permittedWebsites?: string[];
   violationHandling?: 'record_only' | 'warn' | 'terminate';
   leavingExamPolicy?: 'monitor' | 'warn' | 'strict';
+
+  // Offline Mode & Connectivity Policy
+  allowOfflineMode?: boolean;
+  connectivityPolicy?: 'allow_offline' | 'require_continuous';
 }
 
 export interface Assessment {
@@ -74,6 +78,13 @@ export interface Attempt {
   flaggedReason?: string;
   totalEventsLogged?: number;
   pendingReviews?: number;
+  syncStatus?: 'synced' | 'pending' | 'syncing' | 'failed' | 'conflict';
+  lastSyncAt?: string;
+  pendingSyncCount?: number;
+  clientReportedStatus?: string;
+  offlinePackageGeneratedAt?: string;
+  offlineDurationSeconds?: number;
+  policySnapshot?: any;
 }
 
 export interface Answer {
@@ -81,6 +92,37 @@ export interface Answer {
   selectedOption: number;
   isCorrect?: number;
   answeredAt?: string;
+  clientAnsweredAt?: string;
+  localSequenceNumber?: number;
+  syncVersion?: number;
+}
+
+export interface OfflineAssessmentPackage {
+  assessmentId: string;
+  attemptId: string;
+  studentId: string;
+  studentName?: string;
+  title: string;
+  description: string;
+  durationMinutes: number;
+  serverStartedAt: string;
+  serverExpiresAt: string;
+  generatedAt: string;
+  policySnapshot: ProctoringPolicy;
+  permittedExternalDomains: string[];
+  questions: Question[];
+  syncStatus: string;
+}
+
+export interface OfflineSyncStatus {
+  attemptId: string;
+  status: string;
+  syncStatus: string;
+  lastSyncAt: string | null;
+  pendingSyncCount: number;
+  isFinalized: boolean;
+  score: number;
+  percentage: number;
 }
 
 export interface ProctoringEvent {
@@ -208,6 +250,61 @@ declare global {
       onIncognitoDetected?: (callback: (data: { processName: string; windowTitle: string; isIncognito: boolean; evidence: string; timestamp: number }) => void) => () => void;
       onMonitoringInterrupted?: (callback: (data: { reason: string; timestamp: number }) => void) => () => void;
       onMonitoringEvent?: (callback: (data: any) => void) => () => void;
+      offline?: {
+        isAvailable: () => Promise<boolean>;
+        cacheAssessmentPackage: (pkg: any) => Promise<{ ok: boolean; cachedAt?: string; error?: string }>;
+        getCachedPackage: (attemptId: string) => Promise<any | null>;
+        saveAnswer: (payload: {
+          attemptId: string;
+          questionId: string;
+          selectedOption: number;
+          clientAnsweredAt?: string;
+          previousOption?: number;
+          reason?: string;
+        }) => Promise<{ ok: boolean; localSeq?: number; error?: string }>;
+        getSavedAnswers: (attemptId: string) => Promise<any[]>;
+        logProctoringEvent: (payload: {
+          attemptId: string;
+          eventType: string;
+          severity?: string;
+          details?: string;
+          detectionSource?: string;
+          timestamp?: string;
+        }) => Promise<{ ok: boolean; eventId?: string; error?: string }>;
+        logNavigationEvent: (payload: {
+          attemptId: string;
+          fromQuestionIndex: number;
+          toQuestionIndex: number;
+          direction?: string;
+          timestamp?: string;
+        }) => Promise<{ ok: boolean; error?: string }>;
+        getPendingSyncPayload: (attemptId: string) => Promise<{
+          attemptId: string;
+          answers: any[];
+          answerChanges: any[];
+          proctoringEvents: any[];
+          navigationEvents: any[];
+          submissionState: any;
+          monotonicTiming: any;
+        } | null>;
+        acknowledgeSync: (attemptId: string, ack: {
+          acceptedAnswerIds?: string[];
+          acceptedEventIds?: string[];
+          acceptedAnswerChangeIds?: string[];
+          finalized?: boolean;
+          syncTimestamp?: string;
+        }) => Promise<{ ok: boolean; remainingPendingCount?: number; error?: string }>;
+        setSubmissionState: (attemptId: string, state: 'not_submitted' | 'pending_sync' | 'submitted' | 'failed', errorMessage?: string) => Promise<{ ok: boolean }>;
+        getSubmissionState: (attemptId: string) => Promise<{ state: string; submittedAt?: string; errorMessage?: string } | null>;
+        getMonotonicTiming: (attemptId: string) => Promise<{
+          serverStartedAt: string;
+          durationMinutes: number;
+          elapsedSeconds: number;
+          remainingSeconds: number;
+          isExpired: boolean;
+        } | null>;
+        onConnectivityChanged: (callback: (data: { online: boolean; timestamp: number }) => void) => () => void;
+      };
     };
   }
 }

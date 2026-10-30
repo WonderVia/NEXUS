@@ -294,7 +294,9 @@ export async function seedDatabase() {
     tabSwitchingPolicy: 'restrict',
     externalResourceAccess: 'restricted',
     permittedWebsites: [],
-    violationHandling: 'terminate'
+    violationHandling: 'terminate',
+    allowOfflineMode: false,
+    connectivityPolicy: 'require_continuous'
   });
 
   // Policy configuration for Scenario A: Prompt Engineering Interview (AI Allowed, Prompts Monitored)
@@ -313,7 +315,9 @@ export async function seedDatabase() {
     tabSwitchingPolicy: 'warn',
     externalResourceAccess: 'allowed',
     permittedWebsites: ['chatgpt.com', 'openai.com', 'claude.ai', 'gemini.google.com', 'perplexity.ai'],
-    violationHandling: 'record_only'
+    violationHandling: 'record_only',
+    allowOfflineMode: true,
+    connectivityPolicy: 'allow_offline'
   });
 
   // Insert Assessment

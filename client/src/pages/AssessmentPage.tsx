@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Assessment, Attempt, Question, ProctoringEvent } from '../types';
 import { attemptsAPI, questionsAPI, proctoringAPI } from '../services/api';
+import { offlineSyncManager, OfflineSyncState } from '../services/offlineSync';
 import { analyzeWebcamFrame } from '../services/faceDetection';
 import { useTheme } from '../context/ThemeContext';
 import { 
   Clock, ShieldAlert, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, 
   Bookmark, Send, Camera, Eye, AlertOctagon, Lock, X, Monitor, Wifi, ExternalLink,
   Activity, Sun, Moon, ArrowLeft, ArrowRight, RotateCw, Home, Plus, Globe,
-  Bot, ShieldCheck, ShieldX, Terminal, Sparkles, AlertCircle
+  Bot, ShieldCheck, ShieldX, Terminal, Sparkles, AlertCircle, RefreshCw, Database
 } from 'lucide-react';
 
 interface AssessmentPageProps {
@@ -78,6 +79,10 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [heartbeatOk, setHeartbeatOk] = useState<boolean>(true);
 
+  // Offline Examination & Synchronization State
+  const [offlineState, setOfflineState] = useState<OfflineSyncState>(offlineSyncManager.getState());
+  const [offlineSubmittedNotice, setOfflineSubmittedNotice] = useState<string | null>(null);
+
   // Proctoring & CV State
   const videoRef = useRef<HTMLVideoElement>(null);
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
@@ -106,6 +111,12 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
     setExternalActivityLog(prev => [newEvent, ...prev].slice(0, 60));
   }, []);
 
+  // Subscribe to Offline Synchronization State
+  useEffect(() => {
+    const unsub = offlineSyncManager.subscribe(setOfflineState);
+    return unsub;
+  }, []);
+
   // Initialize Assessment and Questions & Setup Approved Tabs
   useEffect(() => {
     async function init() {
@@ -115,11 +126,44 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
         attemptIdRef.current = startRes.attempt.id;
         setRemainingSeconds(startRes.remainingSeconds);
 
+        const currentAnswersMap = new Map<string, number>();
         if (startRes.savedAnswers && startRes.savedAnswers.length > 0) {
-          const map = new Map<string, number>();
-          startRes.savedAnswers.forEach(a => map.set(a.questionId, a.selectedOption));
-          setAnswers(map);
+          startRes.savedAnswers.forEach(a => currentAnswersMap.set(a.questionId, a.selectedOption));
         }
+
+        // Initialize Offline Mode & Pre-cache Package if policy permits
+        const isOfflineAllowed = Boolean(assessment.policy?.allowOfflineMode);
+        let cachedPkg = null;
+        if (isOfflineAllowed) {
+          try {
+            const pkgRes = await attemptsAPI.getOfflinePackage(startRes.attempt.id);
+            if (pkgRes?.package) {
+              cachedPkg = pkgRes.package;
+            }
+          } catch (pkgErr) {
+            console.warn('[AssessmentPage] Could not fetch remote offline package, checking local store:', pkgErr);
+          }
+        }
+
+        // Start offline sync manager with attempt context
+        await offlineSyncManager.start(startRes.attempt.id, isOfflineAllowed, cachedPkg || undefined);
+
+        // Check if there are locally persisted answers in SQLite (e.g. from app restart or previous offline work)
+        if (window.electronAPI?.offline?.getSavedAnswers) {
+          try {
+            const localAnswers = await window.electronAPI.offline.getSavedAnswers(startRes.attempt.id);
+            if (localAnswers && localAnswers.length > 0) {
+              localAnswers.forEach(la => {
+                if (!currentAnswersMap.has(la.questionId)) {
+                  currentAnswersMap.set(la.questionId, la.selectedOption);
+                }
+              });
+            }
+          } catch (err) {
+            console.warn('[AssessmentPage] Error loading local answers:', err);
+          }
+        }
+        setAnswers(currentAnswersMap);
 
         const qRes = await questionsAPI.getByAssessment(assessment.id);
         setQuestions(qRes.questions);
@@ -173,6 +217,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
     init();
 
     return () => {
+      offlineSyncManager.stop();
       if (window.electronAPI) {
         window.electronAPI.setExamMode(false);
         window.electronAPI.setActiveSessionInfo?.({});
@@ -198,6 +243,15 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
   ) => {
     const currentAttemptId = attemptIdRef.current;
     if (!currentAttemptId) return;
+
+    // Durably log proctoring event locally for offline persistence and sync
+    offlineSyncManager.logProctoringEventDurable({
+      eventType,
+      severity,
+      details,
+      detectionSource: source,
+      timestamp: new Date().toISOString()
+    }).catch(() => {});
 
     try {
       const res = await proctoringAPI.logEvent(currentAttemptId, {
@@ -547,9 +601,27 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
     return () => clearInterval(pollInterval);
   }, [attempt?.id, addActivityEvent]);
 
-  // Countdown Timer
+  // Countdown Timer with Monotonic System Clock Tamper Guard
   useEffect(() => {
-    const timer = setInterval(() => {
+    let tickCount = 0;
+    const timer = setInterval(async () => {
+      tickCount++;
+
+      // Every 3 seconds, synchronize with Electron's monotonic timing guard
+      if (tickCount % 3 === 0 && attemptIdRef.current && window.electronAPI?.offline?.getMonotonicTiming) {
+        try {
+          const timing = await window.electronAPI.offline.getMonotonicTiming(attemptIdRef.current);
+          if (timing && typeof timing.remainingSeconds === 'number') {
+            setRemainingSeconds(timing.remainingSeconds);
+            if (timing.isExpired) {
+              clearInterval(timer);
+              handleFinalSubmit();
+              return;
+            }
+          }
+        } catch {}
+      }
+
       setRemainingSeconds(prev => {
         if (prev <= 1) {
           clearInterval(timer);
@@ -569,10 +641,11 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  // Option selection
+  // Option selection with Durable Local SQLite Persistence
   const handleSelectOption = async (optionIdx: number) => {
     if (!questions[currentIdx] || !attempt) return;
     const qId = questions[currentIdx].id;
+    const previousOption = answers.get(qId);
 
     const newAnswers = new Map(answers);
     newAnswers.set(qId, optionIdx);
@@ -580,11 +653,28 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
 
     setSavingStatus('saving');
     try {
-      await attemptsAPI.saveAnswer(attempt.id, qId, optionIdx);
+      // 1. Transactionally persist to local SQLite store first
+      await offlineSyncManager.saveAnswerDurable(qId, optionIdx, previousOption);
+
+      // 2. If online, also send to server
+      if (offlineState.isOnline) {
+        await attemptsAPI.saveAnswer(attempt.id, qId, optionIdx);
+      }
       setSavingStatus('saved');
     } catch {
-      setSavingStatus('error');
+      // If offline, local persistence guarantees answer will not be lost
+      setSavingStatus(offlineState.isOnline ? 'error' : 'saved');
     }
+  };
+
+  const handleNavigateQuestion = (newIdx: number) => {
+    if (newIdx < 0 || newIdx >= questions.length) return;
+    offlineSyncManager.logNavigationDurable(
+      currentIdx,
+      newIdx,
+      newIdx > currentIdx ? 'next' : 'prev'
+    );
+    setCurrentIdx(newIdx);
   };
 
   const toggleMarkForReview = () => {
@@ -602,8 +692,14 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
     setShowSubmitModal(false);
 
     try {
-      const result = await attemptsAPI.submit(attempt.id);
-      onFinish(result);
+      const res = await offlineSyncManager.submitDurable(false, 'candidate_submitted');
+      if (res.synced && res.result) {
+        onFinish(res.result);
+      } else {
+        // Saved safely offline! Notify student
+        setOfflineSubmittedNotice(res.message);
+        setIsSubmitting(false);
+      }
     } catch (err: any) {
       alert(err.message || 'Submission failed');
       setIsSubmitting(false);
@@ -857,7 +953,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
           <span className="hidden md:inline text-neutral-300 truncate max-w-xs">{assessment.title}</span>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {/* AI Policy Badge */}
           {assessment.policy.aiUsage === 'allowed' ? (
             <span className="bg-neutral-800 text-white px-2 py-0.5 border border-neutral-700 flex items-center gap-1">
@@ -867,6 +963,51 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
             <span className="bg-[#c90000] text-white px-2 py-0.5 flex items-center gap-1">
               <ShieldX className="w-3 h-3 text-white" /> AI PROHIBITED
             </span>
+          )}
+
+          {/* Offline Sync & Connectivity Status Indicator */}
+          {offlineState.isOnline ? (
+            offlineState.syncStatus === 'syncing' ? (
+              <span className="bg-sky-950 text-sky-300 px-2 py-0.5 border border-sky-600 flex items-center gap-1.5 animate-pulse">
+                <RefreshCw className="w-3 h-3 animate-spin text-sky-400" />
+                SYNCING ({offlineState.pendingCount})
+              </span>
+            ) : offlineState.pendingCount > 0 ? (
+              <button
+                onClick={() => offlineSyncManager.scheduleSync(0)}
+                className="bg-amber-950 text-amber-300 hover:bg-amber-900 px-2 py-0.5 border border-amber-600 flex items-center gap-1.5 cursor-pointer"
+                title="Click to force immediate sync"
+              >
+                <Database className="w-3 h-3 text-amber-400" />
+                PENDING ({offlineState.pendingCount})
+              </button>
+            ) : offlineState.syncStatus === 'failed' ? (
+              <button
+                onClick={() => offlineSyncManager.scheduleSync(0)}
+                className="bg-red-950 text-red-300 hover:bg-red-900 px-2 py-0.5 border border-red-600 flex items-center gap-1.5 cursor-pointer"
+                title="Sync retry failed - click to retry"
+              >
+                <AlertCircle className="w-3 h-3 text-red-400" />
+                SYNC ERROR - RETRY
+              </button>
+            ) : (
+              <span className="bg-neutral-900 text-emerald-400 px-2 py-0.5 border border-neutral-700 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                ALL SYNCED
+              </span>
+            )
+          ) : (
+            assessment.policy.connectivityPolicy === 'require_continuous' ? (
+              <span className="bg-[#c90000] text-white px-2 py-0.5 border border-red-300 flex items-center gap-1.5 animate-pulse">
+                <AlertTriangle className="w-3 h-3 text-white" />
+                OFFLINE - DISCONNECTION ALERT
+              </span>
+            ) : (
+              <span className="bg-amber-950 text-amber-300 px-2 py-0.5 border border-amber-600 flex items-center gap-1.5">
+                <Database className="w-3 h-3 text-amber-400" />
+                OFFLINE MODE (SAVED LOCALLY)
+              </span>
+            )
           )}
 
           {/* Heartbeat Status */}
@@ -1094,6 +1235,52 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
         </div>
       )}
 
+      {/* 4a. CONTINUOUS CONNECTIVITY VIOLATION WARNING BANNER */}
+      {!offlineState.isOnline && assessment.policy?.connectivityPolicy === 'require_continuous' && (
+        <div className="bg-[#fef2f2] border-b-2 border-[#c90000] px-4 py-2.5 text-xs text-black">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 flex-1 flex-wrap">
+              <span className="font-bold uppercase tracking-[0.12em] bg-[#c90000] text-white px-2 py-0.5 text-[11px] flex items-center gap-1.5 animate-pulse">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Connectivity Policy Violation
+              </span>
+              <span className="font-bold text-[#c90000]">
+                Continuous Internet Connection Required:
+              </span>
+              <span className="font-medium text-neutral-800">
+                This assessment policy strictly requires an active internet connection. Offline answers cannot be credited. Reconnect to your network immediately to prevent automatic termination.
+              </span>
+            </div>
+            <button
+              onClick={() => offlineSyncManager.scheduleSync(0)}
+              className="px-2.5 py-1 bg-black text-white hover:bg-neutral-800 font-bold text-[11px] uppercase tracking-wider transition cursor-pointer"
+            >
+              Test Connection
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 4b. OFFLINE MODE ACTIVE INFORMATIONAL BANNER */}
+      {!offlineState.isOnline && assessment.policy?.connectivityPolicy !== 'require_continuous' && (
+        <div className="bg-[#fffbeb] border-b-2 border-amber-600 px-4 py-2 text-xs text-black">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 flex-1 flex-wrap">
+              <span className="font-bold uppercase tracking-[0.12em] bg-amber-600 text-white px-2 py-0.5 text-[11px] flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5" />
+                Offline Mode Active
+              </span>
+              <span className="font-medium text-amber-950">
+                Network connection is currently unavailable. All answers and proctoring events are durably persisted to your device's encrypted local storage. You may continue answering uninterrupted.
+              </span>
+            </div>
+            <span className="text-[11px] font-mono text-amber-900 font-bold">
+              Pending Sync: {offlineState.pendingCount}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* 5. MAIN VIEWPORT: EXAMINATION CONTENT vs PERMITTED BROWSER VIEW */}
       <div className="flex-1 w-full p-4 sm:p-6 overflow-y-auto">
         {activeTabMode === 'activity' ? (
@@ -1214,7 +1401,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
               <div className="flex items-center justify-between pt-5 border-t-2 border-black">
                 <button
                   disabled={currentIdx === 0}
-                  onClick={() => setCurrentIdx(prev => Math.max(0, prev - 1))}
+                  onClick={() => handleNavigateQuestion(Math.max(0, currentIdx - 1))}
                   className="px-5 py-2.5 bg-white hover:bg-[#f0f0f0] disabled:opacity-30 disabled:cursor-not-allowed text-black border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" /> Previous
@@ -1222,7 +1409,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
 
                 <button
                   disabled={currentIdx === questions.length - 1}
-                  onClick={() => setCurrentIdx(prev => Math.min(questions.length - 1, prev + 1))}
+                  onClick={() => handleNavigateQuestion(Math.min(questions.length - 1, currentIdx + 1))}
                   className="px-6 py-2.5 bg-black hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed text-white border-2 border-black text-xs font-bold uppercase tracking-[0.12em] flex items-center gap-1.5 transition cursor-pointer"
                 >
                   Next <ChevronRight className="w-4 h-4" />
@@ -1289,7 +1476,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
                     return (
                       <button
                         key={q.id}
-                        onClick={() => setCurrentIdx(idx)}
+                        onClick={() => handleNavigateQuestion(idx)}
                         className={`h-9 font-mono text-xs font-bold border-2 transition cursor-pointer ${bgClass} ${
                           isCurrent ? 'outline-2 outline-black outline-offset-2' : ''
                         }`}
@@ -1488,6 +1675,61 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ assessment, forc
                 className="flex-1 py-3 bg-black hover:bg-neutral-800 text-white border-2 border-black font-bold text-xs uppercase tracking-[0.12em] transition disabled:opacity-50 cursor-pointer"
               >
                 {isSubmitting ? 'Submitting...' : 'Confirm Submission'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 8. OFFLINE SUBMISSION SAFEGUARD MODAL */}
+      {offlineSubmittedNotice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+          <div className="w-full max-w-lg bg-white border-4 border-black p-6 sm:p-8">
+            <div className="flex items-center space-x-3 mb-4 border-b-2 border-black pb-3">
+              <div className="w-10 h-10 bg-black flex items-center justify-center text-white">
+                <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-black text-lg uppercase tracking-tight">Assessment Completed & Saved</h3>
+                <span className="text-xs font-mono font-bold text-neutral-600">DURABLE LOCAL ENCRYPTED PERSISTENCE</span>
+              </div>
+            </div>
+
+            <div className="bg-[#f0f0f0] p-4 border-2 border-black space-y-3 mb-6 text-xs text-neutral-800">
+              <p className="font-semibold text-black">
+                {offlineSubmittedNotice}
+              </p>
+              <div className="border-t border-neutral-300 pt-2 flex items-center justify-between font-mono text-[11px]">
+                <span>Status:</span>
+                <span className="font-bold text-amber-700 uppercase">Awaiting Network Reconnection</span>
+              </div>
+              <div className="flex items-center justify-between font-mono text-[11px]">
+                <span>Pending Items:</span>
+                <span className="font-bold">{offlineState.pendingCount} records</span>
+              </div>
+              <p className="text-[11px] text-neutral-500">
+                Do not clear your browser cache or uninstall the application. Once this computer connects to the internet, WUElev8 will automatically synchronize all records with the assessment server.
+              </p>
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={async () => {
+                  const res = await offlineSyncManager.syncNow(true);
+                  if (res && res.isFinalized) {
+                    onFinish(res);
+                  }
+                }}
+                className="flex-1 py-3 bg-black hover:bg-neutral-800 text-white border-2 border-black font-bold text-xs uppercase tracking-[0.12em] flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${offlineState.syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+                <span>Retry Sync Now</span>
+              </button>
+              <button
+                onClick={onExit}
+                className="flex-1 py-3 bg-white hover:bg-[#f0f0f0] text-black border-2 border-black font-bold text-xs uppercase tracking-[0.12em] transition cursor-pointer"
+              >
+                Exit to Dashboard
               </button>
             </div>
           </div>

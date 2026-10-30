@@ -4,6 +4,7 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const { NavigationPolicy } = require('./navigation-policy');
 const { WebMonitor } = require('./monitoring');
+const { offlineStore } = require('./offline-store');
 
 // Application metadata
 app.setName('WUElev8 Smart Proctoring Browser');
@@ -551,10 +552,23 @@ ipcMain.handle('browser:evaluate-url', (event, url) => {
   return navigationPolicy.evaluateNavigation(url);
 });
 
+let wasBackendHealthy = true;
+
 ipcMain.handle('system:heartbeat', async (event, clientState) => {
   if (!validateSender(event)) return { ok: false };
   lastHeartbeatTime = Date.now();
   const backendHealth = await checkBackendHealth();
+
+  if (wasBackendHealthy !== backendHealth.healthy) {
+    wasBackendHealthy = backendHealth.healthy;
+    console.log(`[Connectivity State] Backend status changed: healthy=${wasBackendHealthy}`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('offline:connectivity-changed', {
+        isOnline: wasBackendHealthy,
+        timestamp: Date.now()
+      });
+    }
+  }
 
   return {
     ok: true,
@@ -599,6 +613,124 @@ ipcMain.handle('system:check-backend-health', async (event) => {
   return await checkBackendHealth();
 });
 
+// -------------------------------------------------------------
+// Offline Examination Store IPC Handlers
+// -------------------------------------------------------------
+ipcMain.handle('offline:is-available', (event) => {
+  if (!validateSender(event)) return false;
+  return Boolean(offlineStore && offlineStore.db);
+});
+
+ipcMain.handle('offline:cache-package', (event, pkg) => {
+  if (!validateSender(event)) return { ok: false, error: 'Unauthorized sender' };
+  try {
+    return offlineStore.cacheAssessmentPackage(pkg);
+  } catch (err) {
+    console.error('[IPC offline:cache-package]', err);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('offline:get-package', (event, attemptId) => {
+  if (!validateSender(event)) return null;
+  try {
+    return offlineStore.getCachedPackage(attemptId);
+  } catch (err) {
+    console.error('[IPC offline:get-package]', err);
+    return null;
+  }
+});
+
+ipcMain.handle('offline:save-answer', (event, payload) => {
+  if (!validateSender(event)) return { ok: false, error: 'Unauthorized sender' };
+  try {
+    return offlineStore.saveAnswer(payload);
+  } catch (err) {
+    console.error('[IPC offline:save-answer]', err);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('offline:get-answers', (event, attemptId) => {
+  if (!validateSender(event)) return [];
+  try {
+    return offlineStore.getSavedAnswers(attemptId);
+  } catch (err) {
+    console.error('[IPC offline:get-answers]', err);
+    return [];
+  }
+});
+
+ipcMain.handle('offline:log-event', (event, payload) => {
+  if (!validateSender(event)) return { ok: false };
+  try {
+    return offlineStore.logProctoringEvent(payload);
+  } catch (err) {
+    console.error('[IPC offline:log-event]', err);
+    return { ok: false };
+  }
+});
+
+ipcMain.handle('offline:log-nav', (event, payload) => {
+  if (!validateSender(event)) return { ok: false };
+  try {
+    return offlineStore.logNavigationEvent(payload);
+  } catch (err) {
+    console.error('[IPC offline:log-nav]', err);
+    return { ok: false };
+  }
+});
+
+ipcMain.handle('offline:get-pending-sync', (event, attemptId) => {
+  if (!validateSender(event)) return null;
+  try {
+    return offlineStore.getPendingSyncPayload(attemptId);
+  } catch (err) {
+    console.error('[IPC offline:get-pending-sync]', err);
+    return null;
+  }
+});
+
+ipcMain.handle('offline:ack-sync', (event, { attemptId, ack }) => {
+  if (!validateSender(event)) return { ok: false };
+  try {
+    return offlineStore.acknowledgeSync(attemptId, ack || {});
+  } catch (err) {
+    console.error('[IPC offline:ack-sync]', err);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('offline:set-submission-state', (event, { attemptId, state, errorMessage }) => {
+  if (!validateSender(event)) return { ok: false };
+  try {
+    return offlineStore.setSubmissionState(attemptId, state, errorMessage);
+  } catch (err) {
+    console.error('[IPC offline:set-submission-state]', err);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('offline:get-submission-state', (event, attemptId) => {
+  if (!validateSender(event)) return null;
+  try {
+    return offlineStore.getSubmissionState(attemptId);
+  } catch (err) {
+    console.error('[IPC offline:get-submission-state]', err);
+    return null;
+  }
+});
+
+ipcMain.handle('offline:get-monotonic-timing', (event, attemptId) => {
+  if (!validateSender(event)) return null;
+  try {
+    return offlineStore.getMonotonicTiming(attemptId);
+  } catch (err) {
+    console.error('[IPC offline:get-monotonic-timing]', err);
+    return null;
+  }
+});
+
 ipcMain.on('window:minimize', (event) => {
   if (!validateSender(event)) return;
   if (mainWindow && !mainWindow.isDestroyed() && !isExamMode) {
@@ -627,6 +759,12 @@ if (!gotTheLock) {
 
   // App Lifecycle
   app.whenReady().then(() => {
+    // Initialize durable offline SQLite store
+    try {
+      offlineStore.initialize();
+    } catch (e) {
+      console.warn('[Electron] Failed to initialize offlineStore:', e.message);
+    }
     // Set standard Chrome user agent without Electron/WUElev8 signature
     // This allows modern web apps (ChatGPT, Google, etc.) to connect cleanly without bot blocks
     try {
@@ -717,6 +855,9 @@ if (!gotTheLock) {
 app.on('window-all-closed', () => {
   stopForegroundMonitoring();
   webMonitor.clearSession();
+  try {
+    offlineStore.close();
+  } catch {}
   if (process.platform !== 'darwin') {
     app.quit();
   }

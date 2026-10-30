@@ -58,6 +58,7 @@ export function getAllAttempts(req: AuthenticatedRequest, res: Response) {
         u.email as studentEmail, 
         a.title as assessmentTitle,
         a.durationMinutes,
+        a.policy as assessmentPolicy,
         (SELECT COUNT(*) FROM proctoring_events pe WHERE pe.attemptId = att.id) as totalEventsLogged,
         (SELECT COUNT(*) FROM proctoring_events pe WHERE pe.attemptId = att.id AND pe.reviewStatus = 'pending') as pendingReviews
       FROM attempts att

@@ -231,8 +231,8 @@ export function submitAttempt(req: AuthenticatedRequest, res: Response) {
   }
 }
 
-// Server-side authoritative grading
-function internalScoreAttempt(attemptId: string, targetStatus: 'submitted' | 'timed_out', res: Response) {
+// Server-side authoritative grading calculation
+function calculateAndSaveScore(attemptId: string, targetStatus: 'submitted' | 'timed_out') {
   const attempt: any = db.prepare('SELECT * FROM attempts WHERE id = ?').get(attemptId);
   const assessment: any = db.prepare('SELECT * FROM assessments WHERE id = ?').get(attempt.assessmentId);
   const questions: any[] = db.prepare('SELECT id, correctAnswer FROM questions WHERE assessmentId = ?').all(attempt.assessmentId);
@@ -268,8 +268,7 @@ function internalScoreAttempt(attemptId: string, targetStatus: 'submitted' | 'ti
     WHERE id = ?
   `).run(targetStatus, submittedAt, finalScore, assessment.totalMarks, percentage, attemptId);
 
-  return res.json({
-    message: targetStatus === 'timed_out' ? 'Assessment time expired and auto-submitted' : 'Assessment submitted successfully',
+  return {
     status: targetStatus,
     score: finalScore,
     totalPossibleScore: assessment.totalMarks,
@@ -277,5 +276,344 @@ function internalScoreAttempt(attemptId: string, targetStatus: 'submitted' | 'ti
     correctCount,
     totalQuestions,
     submittedAt
+  };
+}
+
+function internalScoreAttempt(attemptId: string, targetStatus: 'submitted' | 'timed_out', res: Response) {
+  const result = calculateAndSaveScore(attemptId, targetStatus);
+  return res.json({
+    message: targetStatus === 'timed_out' ? 'Assessment time expired and auto-submitted' : 'Assessment submitted successfully',
+    ...result
   });
+}
+
+// -------------------------------------------------------------
+// Offline Examination Mode: Authorization & Assessment Package
+// -------------------------------------------------------------
+export function getOfflinePackage(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { id: attemptId } = req.params;
+    const user = req.user!;
+
+    const attempt: any = db.prepare('SELECT * FROM attempts WHERE id = ?').get(attemptId);
+    if (!attempt) {
+      return res.status(404).json({ error: 'Attempt not found' });
+    }
+
+    if (attempt.studentId !== user.id && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized attempt access' });
+    }
+
+    if (attempt.status !== 'in_progress') {
+      return res.status(400).json({ error: `Cannot download offline package for attempt that is ${attempt.status}` });
+    }
+
+    const assessment: any = db.prepare('SELECT * FROM assessments WHERE id = ?').get(attempt.assessmentId);
+    if (!assessment) {
+      return res.status(404).json({ error: 'Assessment not found' });
+    }
+
+    const policy = JSON.parse(assessment.policy || '{}');
+
+    // Policy check: Offline mode is disabled by default unless explicitly allowed
+    if (policy.allowOfflineMode === false || policy.connectivityPolicy === 'require_continuous') {
+      return res.status(403).json({
+        error: 'Offline Mode is disabled for this assessment by administrative policy. Continuous connectivity is required.',
+        policy: {
+          allowOfflineMode: false,
+          connectivityPolicy: policy.connectivityPolicy || 'require_continuous'
+        }
+      });
+    }
+
+    // Authoritative timing verification
+    const startTimeMs = new Date(attempt.startedAt).getTime();
+    const durationSeconds = assessment.durationMinutes * 60;
+    const elapsedSeconds = Math.floor((Date.now() - startTimeMs) / 1000);
+    const remainingSeconds = Math.max(0, durationSeconds - elapsedSeconds);
+
+    if (remainingSeconds <= 0) {
+      return internalScoreAttempt(attempt.id, 'timed_out', res);
+    }
+
+    const serverExpiryTime = new Date(startTimeMs + durationSeconds * 1000).toISOString();
+    const now = new Date().toISOString();
+
+    // Query sanitized questions: NEVER send correctAnswer or explanation to student!
+    const questions: any[] = db.prepare(`
+      SELECT id, assessmentId, questionText, options, category, orderIndex
+      FROM questions
+      WHERE assessmentId = ?
+      ORDER BY orderIndex ASC
+    `).all(assessment.id).map((q: any) => ({
+      ...q,
+      options: JSON.parse(q.options)
+    }));
+
+    const savedAnswers = db.prepare(`
+      SELECT questionId, selectedOption, clientAnsweredAt, localSequenceNumber
+      FROM answers
+      WHERE attemptId = ?
+    `).all(attempt.id);
+
+    // Save snapshot of policy and record offline package authorization
+    db.prepare(`
+      UPDATE attempts
+      SET offlinePackageGeneratedAt = ?,
+          policySnapshot = COALESCE(policySnapshot, ?),
+          syncStatus = 'synced',
+          lastSyncAt = ?
+      WHERE id = ?
+    `).run(now, assessment.policy, now, attempt.id);
+
+    return res.json({
+      ok: true,
+      package: {
+        assessmentId: assessment.id,
+        assessmentTitle: assessment.title,
+        attemptId: attempt.id,
+        studentId: user.id,
+        studentName: user.name,
+        questions,
+        savedAnswers,
+        policySnapshot: policy,
+        serverStartTime: attempt.startedAt,
+        durationMinutes: assessment.durationMinutes,
+        serverExpiryTime,
+        remainingSeconds,
+        permittedDomains: policy.permittedWebsites || [],
+        sessionExpiry: serverExpiryTime,
+        generatedAt: now,
+        version: '1.0'
+      }
+    });
+  } catch (err: any) {
+    console.error('Get offline package error:', err);
+    return res.status(500).json({ error: 'Failed to generate offline assessment package' });
+  }
+}
+
+// -------------------------------------------------------------
+// Offline Examination Mode: Batch Synchronization
+// -------------------------------------------------------------
+export function syncAttemptBatch(req: AuthenticatedRequest, res: Response) {
+  try {
+    const attemptId = req.params.id as string;
+    const user = req.user!;
+    const {
+      answers = [],
+      answerChanges = [],
+      proctoringEvents = [],
+      submission,
+      submissionState,
+      clientReportedStatus = 'online',
+      offlineDurationSeconds = 0,
+      pendingCount = 0
+    } = req.body;
+
+    const attempt: any = db.prepare('SELECT * FROM attempts WHERE id = ?').get(attemptId);
+    if (!attempt) {
+      return res.status(404).json({ error: 'Attempt not found' });
+    }
+
+    if (attempt.studentId !== user.id && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized attempt access' });
+    }
+
+    const assessment: any = db.prepare('SELECT * FROM assessments WHERE id = ?').get(attempt.assessmentId);
+    if (!assessment) {
+      return res.status(404).json({ error: 'Assessment not found' });
+    }
+
+    // Explicit conflict handling:
+    // If the attempt has already been finalized or revoked on the server, reject conflicting submissions
+    if (attempt.status === 'submitted' || attempt.status === 'flagged') {
+      return res.status(409).json({
+        error: `Attempt is already finalized (${attempt.status}). Conflicting offline modifications rejected.`,
+        attemptStatus: attempt.status,
+        acceptedAnswerIds: [],
+        acceptedEventIds: [],
+        finalizedAt: attempt.submittedAt,
+        score: attempt.score
+      });
+    }
+
+    // Check timing & deadline (with 120s grace period for synchronization latency)
+    const startTimeMs = new Date(attempt.startedAt).getTime();
+    const durationSeconds = assessment.durationMinutes * 60;
+    const graceWindowSeconds = 120;
+    const now = new Date().toISOString();
+    const nowMs = Date.now();
+    const isPastDeadline = nowMs > (startTimeMs + (durationSeconds + graceWindowSeconds) * 1000);
+
+    const acceptedAnswerIds: string[] = [];
+    const acceptedEventIds: string[] = [];
+    const acceptedAnswerChangeIds: string[] = [];
+
+    // Query valid question IDs for this assessment
+    const validQuestions: any[] = db.prepare('SELECT id FROM questions WHERE assessmentId = ?').all(assessment.id);
+    const validQuestionSet = new Set(validQuestions.map(q => q.id));
+
+    // Atomic transaction for all answers, audit logs, and proctoring records
+    const executeBatch = db.transaction(() => {
+      // 1. Process Answers
+      const upsertAnswerStmt = db.prepare(`
+        INSERT INTO answers (id, attemptId, questionId, selectedOption, isCorrect, answeredAt, clientAnsweredAt, localSequenceNumber)
+        VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+        ON CONFLICT(attemptId, questionId) DO UPDATE SET
+          selectedOption = excluded.selectedOption,
+          answeredAt = excluded.answeredAt,
+          clientAnsweredAt = excluded.clientAnsweredAt,
+          localSequenceNumber = excluded.localSequenceNumber
+        WHERE excluded.localSequenceNumber >= COALESCE(answers.localSequenceNumber, 0)
+      `);
+
+      for (const ans of answers) {
+        if (!ans.questionId || ans.selectedOption === undefined) continue;
+        if (!validQuestionSet.has(ans.questionId)) continue; // ignore invalid questions
+
+        const answerId = `ans-${uuidv4().slice(0, 8)}`;
+        const clientTimestamp = ans.clientAnsweredAt || now;
+        const seq = typeof ans.localSequenceNumber === 'number' ? ans.localSequenceNumber : 0;
+        const opt = parseInt(ans.selectedOption, 10);
+
+        upsertAnswerStmt.run(answerId, attemptId, ans.questionId, opt, now, clientTimestamp, seq);
+        acceptedAnswerIds.push(ans.questionId);
+      }
+
+      // 2. Process Answer Change Events (Auditing & Timeline)
+      const insertChangeStmt = db.prepare(`
+        INSERT OR IGNORE INTO answer_change_events (id, attemptId, questionId, previousOption, selectedOption, localSequenceNumber, timestamp, syncedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const change of answerChanges) {
+        const selected = change.selectedOption !== undefined ? change.selectedOption : change.newOption;
+        if (!change.eventId || !change.questionId || selected === undefined) continue;
+        const seq = typeof change.localSequenceNumber === 'number' ? change.localSequenceNumber : 0;
+        insertChangeStmt.run(
+          change.eventId,
+          attemptId,
+          change.questionId,
+          change.previousOption !== undefined ? change.previousOption : null,
+          parseInt(selected, 10),
+          seq,
+          change.timestamp || change.clientTimestamp || now,
+          now
+        );
+        acceptedAnswerChangeIds.push(change.eventId);
+      }
+
+      // 3. Process Proctoring Events
+      const insertEventStmt = db.prepare(`
+        INSERT OR IGNORE INTO proctoring_events (id, attemptId, eventType, timestamp, duration, severity, details, detectionSource, reviewStatus, localSequenceNumber, isOfflineEvent)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 1)
+      `);
+
+      for (const evt of proctoringEvents) {
+        const eventId = evt.eventId || evt.id;
+        if (!eventId || !evt.eventType) continue;
+        const seq = typeof evt.localSequenceNumber === 'number' ? evt.localSequenceNumber : 0;
+        insertEventStmt.run(
+          eventId,
+          attemptId,
+          evt.eventType,
+          evt.timestamp || now,
+          evt.duration || 0,
+          evt.severity || 'low',
+          evt.details || 'Offline proctoring event recorded',
+          evt.detectionSource || 'electron_browser',
+          seq
+        );
+        acceptedEventIds.push(eventId);
+      }
+
+      // 4. Update attempt synchronization metadata
+      db.prepare(`
+        UPDATE attempts
+        SET lastSyncAt = ?,
+            syncStatus = 'synced',
+            pendingSyncCount = ?,
+            clientReportedStatus = ?,
+            offlineDurationSeconds = COALESCE(offlineDurationSeconds, 0) + ?
+        WHERE id = ?
+      `).run(now, pendingCount, clientReportedStatus, Math.max(0, offlineDurationSeconds), attemptId);
+    });
+
+    executeBatch();
+
+    // 5. Final Submission or Deadline Auto-submit
+    let finalStatus: string = attempt.status;
+    let scoreResult: any = null;
+
+    const shouldFinalize =
+      submission?.isFinalSubmission ||
+      submissionState?.state === 'pending_sync' ||
+      submissionState?.state === 'submitted' ||
+      clientReportedStatus === 'submitted';
+
+    if (shouldFinalize) {
+      scoreResult = calculateAndSaveScore(attemptId, 'submitted');
+      finalStatus = 'submitted';
+    } else if (isPastDeadline && attempt.status === 'in_progress') {
+      scoreResult = calculateAndSaveScore(attemptId, 'timed_out');
+      finalStatus = 'timed_out';
+    }
+
+    return res.json({
+      ok: true,
+      success: true,
+      attemptId,
+      acceptedAnswerIds,
+      acceptedEventIds,
+      acceptedAnswerChangeIds,
+      status: finalStatus,
+      attemptStatus: finalStatus,
+      clientReportedStatus,
+      serverTimestamp: now,
+      syncedAt: now,
+      syncTimestamp: now,
+      isFinalized: finalStatus !== 'in_progress',
+      score: scoreResult ? scoreResult.score : attempt.score,
+      percentage: scoreResult ? scoreResult.percentage : attempt.percentage
+    });
+  } catch (err: any) {
+    console.error('Sync attempt batch error:', err);
+    return res.status(500).json({ error: 'Failed to synchronize assessment data' });
+  }
+}
+
+// -------------------------------------------------------------
+// Offline Examination Mode: Synchronization Status Check
+// -------------------------------------------------------------
+export function getAttemptSyncStatus(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { id: attemptId } = req.params;
+    const user = req.user!;
+
+    const attempt: any = db.prepare('SELECT * FROM attempts WHERE id = ?').get(attemptId);
+    if (!attempt) {
+      return res.status(404).json({ error: 'Attempt not found' });
+    }
+
+    if (attempt.studentId !== user.id && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized attempt access' });
+    }
+
+    return res.json({
+      attemptId: attempt.id,
+      status: attempt.status,
+      lastSyncAt: attempt.lastSyncAt,
+      syncStatus: attempt.syncStatus || 'online',
+      pendingSyncCount: attempt.pendingSyncCount || 0,
+      clientReportedStatus: attempt.clientReportedStatus || 'online',
+      score: attempt.score,
+      percentage: attempt.percentage,
+      submittedAt: attempt.submittedAt,
+      isFinalized: attempt.status === 'submitted' || attempt.status === 'timed_out' || attempt.status === 'flagged'
+    });
+  } catch (err: any) {
+    console.error('Get sync status error:', err);
+    return res.status(500).json({ error: 'Failed to retrieve sync status' });
+  }
 }

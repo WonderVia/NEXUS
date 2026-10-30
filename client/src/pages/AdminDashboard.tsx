@@ -485,6 +485,7 @@ export const AdminDashboard: React.FC = () => {
                   <th className="p-3.5">Assessment</th>
                   <th className="p-3.5">Score</th>
                   <th className="p-3.5">Status</th>
+                  <th className="p-3.5">Sync State</th>
                   <th className="p-3.5">Violations</th>
                   <th className="p-3.5">Date / Time</th>
                   <th className="p-3.5 text-right">Audit Trail</th>
@@ -493,7 +494,7 @@ export const AdminDashboard: React.FC = () => {
               <tbody className="divide-y-2 divide-black">
                 {filteredAttempts.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-neutral-500 font-mono">
+                    <td colSpan={8} className="p-8 text-center text-neutral-500 font-mono">
                       No matching assessment attempts found.
                     </td>
                   </tr>
@@ -519,6 +520,27 @@ export const AdminDashboard: React.FC = () => {
                           <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] border border-black bg-[#f0f0f0] text-black">
                             {att.status}
                           </span>
+                        </td>
+                        <td className="p-3.5">
+                          <div className="flex flex-col gap-0.5">
+                            <span className={`px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.10em] border w-fit ${
+                              att.syncStatus === 'synced'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-400'
+                                : att.syncStatus === 'pending'
+                                ? 'bg-amber-50 text-amber-800 border-amber-400'
+                                : att.syncStatus === 'failed' || att.syncStatus === 'conflict'
+                                ? 'bg-red-50 text-red-800 border-red-400'
+                                : 'bg-[#f0f0f0] text-neutral-700 border-neutral-300'
+                            }`}>
+                              {att.syncStatus || 'synced'}
+                              {att.pendingSyncCount && att.pendingSyncCount > 0 ? ` (${att.pendingSyncCount})` : ''}
+                            </span>
+                            {att.lastSyncAt && (
+                              <span className="text-[9px] text-neutral-500 font-mono">
+                                {new Date(att.lastSyncAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-3.5">
                           <span className={`font-mono font-bold px-2 py-0.5 text-[11px] ${
@@ -901,6 +923,17 @@ export const AdminDashboard: React.FC = () => {
                         {(a.policy.violationHandling || 'warn').replace('_', ' ').toUpperCase()}
                       </span>
                     </div>
+
+                    <div className="p-2.5 flex items-center justify-between col-span-2 border-t-2 border-black bg-white">
+                      <span className="text-neutral-600 font-bold uppercase tracking-[0.12em]">Offline Examination:</span>
+                      <span className={`font-bold px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] border ${
+                        a.policy.allowOfflineMode
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-500'
+                          : 'bg-neutral-100 text-neutral-700 border-neutral-400'
+                      }`}>
+                        {a.policy.allowOfflineMode ? 'Offline Enabled (Durable Store)' : 'Online Continuous Only'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -917,7 +950,9 @@ export const AdminDashboard: React.FC = () => {
                           tabSwitchingPolicy: a.policy.tabSwitchingPolicy || 'warn',
                           externalResourceAccess: a.policy.externalResourceAccess || 'restricted',
                           permittedWebsites: Array.isArray(a.policy.permittedWebsites) ? a.policy.permittedWebsites : [],
-                          violationHandling: a.policy.violationHandling || 'warn'
+                          violationHandling: a.policy.violationHandling || 'warn',
+                          allowOfflineMode: Boolean(a.policy.allowOfflineMode),
+                          connectivityPolicy: a.policy.connectivityPolicy || 'require_continuous'
                         }
                       });
                     }}
@@ -1368,7 +1403,9 @@ export const AdminDashboard: React.FC = () => {
                         permittedWebsites: ['chatgpt.com', 'openai.com', 'claude.ai', 'gemini.google.com', 'perplexity.ai'],
                         violationHandling: 'record_only',
                         requireFullscreen: false,
-                        autoSubmitOnCriticalViolations: false
+                        autoSubmitOnCriticalViolations: false,
+                        allowOfflineMode: true,
+                        connectivityPolicy: 'allow_offline'
                       }
                     });
                   }}
@@ -1377,7 +1414,7 @@ export const AdminDashboard: React.FC = () => {
                   <div className="font-extrabold uppercase tracking-tight flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" /> Scenario A: Prompt Engineering
                   </div>
-                  <div className="text-[10px] text-neutral-600 font-mono mt-1">AI Allowed • Prompts Monitored • Record Only</div>
+                  <div className="text-[10px] text-neutral-600 font-mono mt-1">AI Allowed • Offline Ready • Record Only</div>
                 </button>
 
                 <button
@@ -1394,7 +1431,9 @@ export const AdminDashboard: React.FC = () => {
                         permittedWebsites: [],
                         violationHandling: 'terminate',
                         requireFullscreen: true,
-                        autoSubmitOnCriticalViolations: true
+                        autoSubmitOnCriticalViolations: true,
+                        allowOfflineMode: false,
+                        connectivityPolicy: 'require_continuous'
                       }
                     });
                   }}
@@ -1403,7 +1442,7 @@ export const AdminDashboard: React.FC = () => {
                   <div className="font-extrabold uppercase tracking-tight flex items-center gap-1.5">
                     <ShieldAlert className="w-3.5 h-3.5 text-[#c90000]" /> Scenario B: DSA / Strict Coding
                   </div>
-                  <div className="text-[10px] text-neutral-600 font-mono mt-1">AI Prohibited • Tabs Restrict • Terminate Action</div>
+                  <div className="text-[10px] text-neutral-600 font-mono mt-1">AI Prohibited • Continuous Online • Strict Kiosk</div>
                 </button>
               </div>
             </div>
@@ -1744,6 +1783,50 @@ export const AdminDashboard: React.FC = () => {
                         className="w-full bg-white border border-black px-2.5 py-1 text-xs text-black"
                       />
                     </div>
+                  </div>
+                </div>
+
+                {/* 8. Offline Examination & Network Resilience */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-black font-bold uppercase tracking-[0.12em]">8. Offline Examination Mode</label>
+                    <span className="text-[10px] text-neutral-600 font-mono">Durable local persistence & batch sync</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setPolicyForm({
+                        ...policyForm,
+                        policy: { ...policyForm.policy, allowOfflineMode: false, connectivityPolicy: 'require_continuous' }
+                      })}
+                      className={`py-2 px-3 font-bold uppercase tracking-[0.12em] border-2 border-black text-center transition cursor-pointer ${
+                        !policyForm.policy.allowOfflineMode
+                          ? 'bg-black text-white'
+                          : 'bg-white text-black hover:bg-[#f0f0f0]'
+                      }`}
+                    >
+                      <div className="text-xs">Disabled (Default)</div>
+                      <div className="text-[9px] opacity-70 mt-0.5">Continuous live connection required</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPolicyForm({
+                        ...policyForm,
+                        policy: { ...policyForm.policy, allowOfflineMode: true, connectivityPolicy: 'allow_offline' }
+                      })}
+                      className={`py-2 px-3 font-bold uppercase tracking-[0.12em] border-2 border-black text-center transition cursor-pointer ${
+                        policyForm.policy.allowOfflineMode
+                          ? 'bg-black text-white'
+                          : 'bg-white text-black hover:bg-[#f0f0f0]'
+                      }`}
+                    >
+                      <div className="text-xs">Enabled (Resilient)</div>
+                      <div className="text-[9px] opacity-70 mt-0.5">Permits offline answering & late sync</div>
+                    </button>
+                  </div>
+                  <div className="p-2.5 bg-[#f0f0f0] border-2 border-black text-[10px] text-neutral-600 leading-normal">
+                    When enabled, an authorized encrypted snapshot is persisted to the candidate's workstation via the Electron secure store. Candidates can answer without network connectivity and synchronize pending answers and audit telemetry once reconnected.
                   </div>
                 </div>
               </div>

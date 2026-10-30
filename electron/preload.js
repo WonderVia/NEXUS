@@ -128,5 +128,62 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const subscription = (_event, data) => callback(data);
     ipcRenderer.on('proctor:monitoring-event', subscription);
     return () => ipcRenderer.removeListener('proctor:monitoring-event', subscription);
+  },
+
+  // -------------------------------------------------------------
+  // Offline Examination Store & Synchronization APIs
+  // -------------------------------------------------------------
+  offline: {
+    isAvailable: () => ipcRenderer.invoke('offline:is-available'),
+    cacheAssessmentPackage: (pkg) => {
+      if (!pkg || typeof pkg !== 'object') return Promise.resolve({ ok: false });
+      return ipcRenderer.invoke('offline:cache-package', pkg);
+    },
+    getCachedPackage: (attemptId) => {
+      if (typeof attemptId !== 'string') return Promise.resolve(null);
+      return ipcRenderer.invoke('offline:get-package', attemptId);
+    },
+    saveAnswer: (payload) => {
+      if (!payload || typeof payload !== 'object') return Promise.resolve({ ok: false });
+      return ipcRenderer.invoke('offline:save-answer', payload);
+    },
+    getSavedAnswers: (attemptId) => {
+      if (typeof attemptId !== 'string') return Promise.resolve([]);
+      return ipcRenderer.invoke('offline:get-answers', attemptId);
+    },
+    logProctoringEvent: (payload) => {
+      if (!payload || typeof payload !== 'object') return Promise.resolve({ ok: false });
+      return ipcRenderer.invoke('offline:log-event', payload);
+    },
+    logNavigationEvent: (payload) => {
+      if (!payload || typeof payload !== 'object') return Promise.resolve({ ok: false });
+      return ipcRenderer.invoke('offline:log-nav', payload);
+    },
+    getPendingSyncPayload: (attemptId) => {
+      if (typeof attemptId !== 'string') return Promise.resolve(null);
+      return ipcRenderer.invoke('offline:get-pending-sync', attemptId);
+    },
+    acknowledgeSync: (attemptId, ack) => {
+      if (typeof attemptId !== 'string') return Promise.resolve({ ok: false });
+      return ipcRenderer.invoke('offline:ack-sync', { attemptId, ack });
+    },
+    setSubmissionState: (attemptId, state, errorMessage) => {
+      if (typeof attemptId !== 'string') return Promise.resolve({ ok: false });
+      return ipcRenderer.invoke('offline:set-submission-state', { attemptId, state, errorMessage });
+    },
+    getSubmissionState: (attemptId) => {
+      if (typeof attemptId !== 'string') return Promise.resolve(null);
+      return ipcRenderer.invoke('offline:get-submission-state', attemptId);
+    },
+    getMonotonicTiming: (attemptId) => {
+      if (typeof attemptId !== 'string') return Promise.resolve(null);
+      return ipcRenderer.invoke('offline:get-monotonic-timing', attemptId);
+    },
+    onConnectivityChanged: (callback) => {
+      if (typeof callback !== 'function') return () => {};
+      const subscription = (_event, data) => callback(data);
+      ipcRenderer.on('offline:connectivity-changed', subscription);
+      return () => ipcRenderer.removeListener('offline:connectivity-changed', subscription);
+    }
   }
 });
