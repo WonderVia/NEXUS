@@ -1,13 +1,11 @@
 /**
  * Smart Browser In-App Web Activity & AI Prompt Monitoring Engine
  * 
- * Migrates and integrates the Chrome Extension Companion's monitoring logic
- * directly into the Electron desktop application.
- * 
  * Capabilities:
  * - Detects visits to ChatGPT, Claude, Gemini, Perplexity, Google Search, Bing.
  * - Injects prompt & search interception into monitored WebContents.
  * - Extracts submitted queries from textareas, contenteditable divs, and URL parameters.
+ * - Captures prompt submissions securely via isolated console-message IPC bridge.
  * - Delivers real events to the proctoring backend (/api/proctor/extension-event).
  * - Tracks dwell duration on external resources.
  * - Reuses the exact database schema and admin audit trail.
@@ -21,6 +19,8 @@ const MONITORED_DOMAINS = [
   { pattern: /google\.[a-z.]+\/search/i, label: 'Google Search' },
   { pattern: /perplexity\.ai/i, label: 'Perplexity AI' },
   { pattern: /copilot\.microsoft\.com/i, label: 'Microsoft Copilot' },
+  { pattern: /poe\.com/i, label: 'Poe AI' },
+  { pattern: /v0\.dev/i, label: 'v0 by Vercel' }
 ];
 
 class WebMonitor {
@@ -60,6 +60,7 @@ class WebMonitor {
   }
 
   classifyUrl(url) {
+    if (!url) return null;
     for (const domain of MONITORED_DOMAINS) {
       if (domain.pattern.test(url)) {
         return domain.label;
@@ -92,8 +93,8 @@ class WebMonitor {
 
       if (res.ok) {
         const data = await res.json();
-        console.log(`[WebMonitor] Event persisted to backend: ID=${data.eventId}, Attempt=${data.attemptId}`);
-        this.notifyListeners({ ...body, eventId: data.eventId, persisted: true });
+        console.log(`[WebMonitor] Event persisted to backend: ID=${data.eventId}, Attempt=${data.attemptId}, isViolation=${data.isViolation}`);
+        this.notifyListeners({ ...body, eventId: data.eventId, isViolation: data.isViolation, persisted: true });
         return data;
       } else {
         const text = await res.text();
@@ -110,15 +111,40 @@ class WebMonitor {
    * Injects prompt & search monitoring into an Electron WebContents instance.
    */
   attachToWebContents(webContents) {
+    // Intercept console message bridge for prompt extraction
+    webContents.on('console-message', (event, level, message) => {
+      if (typeof message === 'string' && message.startsWith('__WUELEV8_EVENT__:')) {
+        try {
+          const raw = message.substring('__WUELEV8_EVENT__:'.length);
+          const data = JSON.parse(raw);
+          console.log(`[WebMonitor Captured] ${data.type} on ${data.platform}: "${data.query}"`);
+
+          const isAi = data.type === 'ai_query_submitted' || /chatgpt|claude|gemini|perplexity|copilot|poe/i.test(data.platform);
+          
+          this.reportViolation({
+            eventType: isAi ? 'ai_query_submitted' : 'search_query_submitted',
+            severity: isAi ? 'medium' : 'low',
+            details: isAi 
+              ? `AI prompt submitted to ${data.platform}: "${data.query}"` 
+              : `Search query submitted to ${data.platform}: "${data.query}"`,
+            prompt: data.query,
+            url: data.url
+          });
+        } catch (err) {
+          console.warn('[WebMonitor] Failed to parse bridge event:', err.message);
+        }
+      }
+    });
+
     webContents.on('did-finish-load', async () => {
       const currentUrl = webContents.getURL();
       const label = this.classifyUrl(currentUrl);
 
       if (label) {
-        console.log(`[WebMonitor] Monitored web resource loaded in Electron: ${label} (${currentUrl})`);
+        console.log(`[WebMonitor] Monitored web resource loaded: ${label} (${currentUrl})`);
         this.visitTimestamps.set(webContents.id, { url: currentUrl, startTime: Date.now(), label });
 
-        // Report visit
+        // Report initial visit
         await this.reportViolation({
           eventType: 'external_site_visit',
           severity: 'medium',
@@ -139,7 +165,7 @@ class WebMonitor {
           this.reportViolation({
             eventType: 'external_site_duration',
             severity: 'medium',
-            details: `Candidate spent ${(duration / 1000).toFixed(1)}s on prohibited resource: ${record.label}.`,
+            details: `Candidate spent ${(duration / 1000).toFixed(1)}s on monitored resource: ${record.label}.`,
             duration,
             url: record.url
           });
@@ -158,40 +184,63 @@ class WebMonitor {
         const platform = ${JSON.stringify(platformLabel)};
         let lastReported = '';
 
+        function emitEvent(query, type) {
+          if (!query || query.trim().length === 0 || query.trim() === lastReported) return;
+          lastReported = query.trim();
+          try {
+            console.log('__WUELEV8_EVENT__:' + JSON.stringify({
+              platform,
+              type: type || 'ai_query_submitted',
+              query: query.trim(),
+              url: window.location.href,
+              timestamp: Date.now()
+            }));
+          } catch {}
+        }
+
         function extractSearchQuery() {
           try {
             const url = new URL(window.location.href);
             const q = url.searchParams.get('q') || url.searchParams.get('query');
-            if (q && q.trim().length > 0 && q !== lastReported) {
-              lastReported = q;
-              window.__wuelev8_report_prompt?.({
-                platform,
-                type: 'search_query_submitted',
-                query: q.trim(),
-                url: window.location.href
-              });
+            if (q) {
+              emitEvent(q, 'search_query_submitted');
             }
           } catch {}
         }
 
         extractSearchQuery();
 
-        // Listen for user keyboard submissions
+        // Listen for keyboard Enter submissions
         window.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             setTimeout(() => {
               const active = document.activeElement;
               const text = active ? (active.value || active.innerText || active.textContent || '') : '';
-              if (text && text.trim().length > 0 && text.trim() !== lastReported) {
-                lastReported = text.trim();
-                window.__wuelev8_report_prompt?.({
-                  platform,
-                  type: 'ai_query_submitted',
-                  query: text.trim(),
-                  url: window.location.href
-                });
+              if (text) {
+                emitEvent(text, 'ai_query_submitted');
               }
-            }, 50);
+            }, 60);
+          }
+        }, true);
+
+        // Listen for send button clicks
+        window.addEventListener('click', (e) => {
+          const btn = e.target.closest('button');
+          if (btn) {
+            const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+            const testid = (btn.getAttribute('data-testid') || '').toLowerCase();
+            if (aria.includes('send') || aria.includes('submit') || testid.includes('send') || testid.includes('submit')) {
+              setTimeout(() => {
+                const inputs = document.querySelectorAll('textarea, div[contenteditable="true"], div[role="textbox"]');
+                for (const input of inputs) {
+                  const text = input.value || input.innerText || input.textContent || '';
+                  if (text && text.trim().length > 0) {
+                    emitEvent(text, 'ai_query_submitted');
+                    break;
+                  }
+                }
+              }, 60);
+            }
           }
         }, true);
       })();
@@ -204,4 +253,3 @@ class WebMonitor {
 }
 
 module.exports = { WebMonitor, MONITORED_DOMAINS };
-

@@ -273,6 +273,11 @@ export const analyticsAPI = {
     return request<{ attempts: Attempt[] }>(`/admin/attempts${query ? `?${query}` : ''}`);
   },
 
+  getAllEvents: (filters?: { assessmentId?: string; eventType?: string; severity?: string; source?: string; reviewStatus?: string; isAi?: string }) => {
+    const query = new URLSearchParams(filters as any).toString();
+    return request<{ events: ProctoringEvent[] }>(`/admin/events${query ? `?${query}` : ''}`);
+  },
+
   getStudents: () => request<{ students: User[] }>('/admin/students'),
 
   getExportUrl: (type: 'results' | 'events', assessmentId?: string) => {

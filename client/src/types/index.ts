@@ -23,6 +23,7 @@ export interface ProctoringPolicy {
   externalResourceAccess?: 'allowed' | 'restricted';
   permittedWebsites?: string[];
   violationHandling?: 'record_only' | 'warn' | 'terminate';
+  leavingExamPolicy?: 'monitor' | 'warn' | 'strict';
 }
 
 export interface Assessment {
@@ -85,12 +86,35 @@ export interface Answer {
 export interface ProctoringEvent {
   id: string;
   attemptId: string;
-  eventType: 'face_missing' | 'multiple_faces' | 'focus_loss' | 'fullscreen_exit' | 'tab_switch' | 'devtools_opened' | 'restricted_key' | 'mic_activity' | 'system_anomaly' | 'external_site_visit' | 'ai_query_submitted' | 'ai_response_received' | 'search_query_submitted' | 'external_site_duration' | 'external_app_detected' | 'assessment_return';
+  eventType: 
+    | 'face_missing' 
+    | 'multiple_faces' 
+    | 'focus_loss' 
+    | 'fullscreen_exit' 
+    | 'tab_switch' 
+    | 'devtools_opened' 
+    | 'restricted_key' 
+    | 'mic_activity' 
+    | 'system_anomaly' 
+    | 'external_site_visit' 
+    | 'ai_query_submitted' 
+    | 'ai_response_received' 
+    | 'search_query_submitted' 
+    | 'external_site_duration' 
+    | 'external_app_detected' 
+    | 'assessment_return'
+    | 'external_browser_detected'
+    | 'incognito_browser_detected'
+    | 'unauthorized_navigation'
+    | 'monitoring_interrupted'
+    | 'exam_terminated'
+    | 'exam_exit_attempt'
+    | 'window_minimized';
   timestamp: string;
   duration: number;
   severity: 'low' | 'medium' | 'high' | 'critical';
   details: string;
-  detectionSource: 'webcam_cv' | 'browser_focus' | 'electron_kiosk' | 'keyboard_monitor' | 'browser_extension' | 'browser_navigation';
+  detectionSource: 'webcam_cv' | 'browser_focus' | 'electron_kiosk' | 'keyboard_monitor' | 'browser_extension' | 'browser_navigation' | 'windows_monitor' | 'electron_browser';
   reviewStatus: 'pending' | 'reviewed' | 'dismissed' | 'violation_confirmed';
   reviewedBy?: string;
   reviewedAt?: string;
@@ -142,6 +166,14 @@ declare global {
         data?: any;
         error?: string;
       }>;
+      heartbeat?: (clientState?: any) => Promise<{
+        ok: boolean;
+        backendHealthy?: boolean;
+        foregroundMonitorActive?: boolean;
+        processCheckOk?: boolean;
+        isExamMode?: boolean;
+        timestamp?: number;
+      }>;
       setExamMode: (active: boolean) => Promise<boolean>;
       setExamPolicy?: (policy: {
         permittedExternalDomains?: string[];
@@ -149,14 +181,26 @@ declare global {
         externalResourceAccess?: 'allowed' | 'restricted';
         tabSwitchingPolicy?: 'allowed' | 'warn' | 'restrict';
         violationHandling?: 'record_only' | 'warn' | 'terminate';
+        leavingExamPolicy?: 'monitor' | 'warn' | 'strict';
       }) => Promise<boolean>;
       setActiveSessionInfo?: (sessionInfo: { attemptId?: string; token?: string }) => Promise<boolean>;
+      evaluateUrl?: (url: string) => Promise<{
+        allowed: boolean;
+        reason?: string;
+        message?: string;
+        isAi?: boolean;
+      }>;
       onWindowBlur: (callback: (data: { timestamp: number }) => void) => () => void;
       onWindowFocus: (callback: (data: { timestamp: number; duration: number }) => void) => () => void;
       onFullscreenExitAttempt: (callback: (data: { timestamp: number }) => void) => () => void;
       onBlockedShortcut: (callback: (data: { key?: string; action?: string; url?: string }) => void) => () => void;
       onNavigationBlocked?: (callback: (data: { url: string; reason: string; message: string; timestamp: number }) => void) => () => void;
+      onCloseAttempt?: (callback: (data: { timestamp: number }) => void) => () => void;
+      onMinimizeAttempt?: (callback: (data: { timestamp: number }) => void) => () => void;
       onExternalAppDetected: (callback: (data: { processName: string; windowTitle: string; category: string; timestamp: number }) => void) => () => void;
+      onExternalBrowserDetected?: (callback: (data: { processName: string; windowTitle: string; isIncognito: boolean; timestamp: number }) => void) => () => void;
+      onIncognitoDetected?: (callback: (data: { processName: string; windowTitle: string; isIncognito: boolean; evidence: string; timestamp: number }) => void) => () => void;
+      onMonitoringInterrupted?: (callback: (data: { reason: string; timestamp: number }) => void) => () => void;
       onMonitoringEvent?: (callback: (data: any) => void) => () => void;
     };
   }

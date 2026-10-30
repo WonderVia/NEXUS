@@ -5,11 +5,20 @@
  * - Allows approved assessment origin and internal assessment routes.
  * - Prevents arbitrary external websites from hijacking or loading inside the exam window.
  * - Supports configurable allowed external domains (e.g. approved documentation/references).
+ * - Distinguishes AI platforms from general web browsing for precise policy compliance.
  * - Intercepts unapproved popups and redirects.
  * - Emits audit events without abruptly terminating candidate assessments.
  */
 
 const { URL } = require('url');
+
+const AI_DOMAINS = [
+  'chatgpt.com', 'openai.com',
+  'claude.ai', 'anthropic.com',
+  'gemini.google.com', 'perplexity.ai',
+  'copilot.microsoft.com', 'character.ai',
+  'poe.com', 'v0.dev'
+];
 
 class NavigationPolicy {
   constructor(options = {}) {
@@ -39,6 +48,12 @@ class NavigationPolicy {
     this.externalResourceAccess = 'restricted';
   }
 
+  isAiDomain(hostname) {
+    if (!hostname) return false;
+    const lower = hostname.toLowerCase();
+    return AI_DOMAINS.some(d => lower === d || lower.endsWith(`.${d}`));
+  }
+
   setExamActive(active, options = {}) {
     this.isExamActive = Boolean(active);
     
@@ -55,18 +70,13 @@ class NavigationPolicy {
 
     // If AI usage is allowed for this assessment, automatically permit supported AI domains
     if (this.aiUsage === 'allowed') {
-      permitted.push(
-        'chatgpt.com', 'openai.com', 
-        'claude.ai', 'anthropic.com', 
-        'gemini.google.com', 'perplexity.ai', 
-        'copilot.microsoft.com'
-      );
+      permitted.push(...AI_DOMAINS);
     }
 
     this.permittedExternalDomains = new Set(
       permitted.map(d => d.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim()).filter(Boolean)
     );
-    console.log(`[Navigation Policy] Exam active: ${this.isExamActive}. AI Usage: ${this.aiUsage}, Ext Access: ${this.externalResourceAccess}. Permitted domains:`, Array.from(this.permittedExternalDomains));
+    console.log(`[Navigation Policy] Exam active: ${this.isExamActive}. AI Usage: ${this.aiUsage}, Ext Access: ${this.externalResourceAccess}. Permitted count: ${this.permittedExternalDomains.size}`);
   }
 
   addApprovedOrigin(origin) {
@@ -81,6 +91,7 @@ class NavigationPolicy {
   }
 
   isPermittedExternalDomain(hostname) {
+    if (!hostname) return false;
     const lower = hostname.toLowerCase();
     for (const domain of this.permittedExternalDomains) {
       if (lower === domain || lower.endsWith(`.${domain}`)) {
@@ -92,7 +103,11 @@ class NavigationPolicy {
 
   evaluateNavigation(targetUrl) {
     // 1. Allow local file protocols (packaged client bundle)
-    if (targetUrl.startsWith('file:') || targetUrl.startsWith('devtools:') || targetUrl.startsWith('data:') || targetUrl.startsWith('blob:')) {
+    if (!targetUrl) {
+      return { allowed: false, reason: 'empty_url', message: 'No target URL provided' };
+    }
+
+    if (targetUrl.startsWith('file:') || targetUrl.startsWith('devtools:') || targetUrl.startsWith('data:') || targetUrl.startsWith('blob:') || targetUrl.startsWith('chrome-extension:')) {
       return { allowed: true, reason: 'internal_protocol' };
     }
 
@@ -110,15 +125,29 @@ class NavigationPolicy {
 
     // 3. If exam mode is NOT active, navigation within app or localhost is open
     if (!this.isExamActive) {
-      // Allow general navigation when outside active exam session
       return { allowed: true, reason: 'outside_exam_session' };
     }
 
-    // 4. During active exam, check if external resource access is generally allowed or domain is permitted
+    const isAI = this.isAiDomain(parsed.hostname);
+
+    // 4. AI-Specific Policy Check
+    if (isAI && this.aiUsage === 'prohibited') {
+      return {
+        allowed: false,
+        reason: 'prohibited_ai_tool',
+        isAi: true,
+        message: `Access to AI tool (${parsed.hostname}) is prohibited for this assessment.`,
+        url: targetUrl,
+        hostname: parsed.hostname
+      };
+    }
+
+    // 5. During active exam, check if external resource access is generally allowed or domain is permitted
     if (this.externalResourceAccess === 'allowed') {
       return {
         allowed: true,
         monitored: true,
+        isAi,
         reason: 'external_resource_access_allowed',
         domain: parsed.hostname
       };
@@ -128,15 +157,17 @@ class NavigationPolicy {
       return { 
         allowed: true, 
         monitored: true, 
-        reason: 'permitted_external_domain',
+        isAi,
+        reason: isAI ? 'permitted_ai_tool' : 'permitted_external_domain',
         domain: parsed.hostname
       };
     }
 
-    // 5. Blocked: External website during active exam
+    // 6. Blocked: External website during active exam
     return {
       allowed: false,
-      reason: 'exam_policy_restricted',
+      reason: isAI ? 'prohibited_ai_tool' : 'unauthorized_domain',
+      isAi,
       message: `Access to ${parsed.hostname} is restricted by WUElev8 Exam Security Policy.`,
       url: targetUrl,
       hostname: parsed.hostname
@@ -144,5 +175,4 @@ class NavigationPolicy {
   }
 }
 
-module.exports = { NavigationPolicy };
-
+module.exports = { NavigationPolicy, AI_DOMAINS };

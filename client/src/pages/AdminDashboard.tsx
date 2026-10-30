@@ -5,23 +5,33 @@ import {
   BarChart3, Users, BookOpen, ShieldAlert, Download, CheckCircle2, 
   XCircle, Clock, Search, Filter, RefreshCw, Plus, 
   Trash2, Eye, Check, Sliders, Bot,
-  ArrowUpRight, ArrowDownLeft, Sparkles, Send, Globe
+  ArrowUpRight, ArrowDownLeft, Sparkles, Send, Globe,
+  Activity, ShieldCheck, ShieldX, Terminal, ExternalLink, AlertOctagon
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'analytics' | 'attempts' | 'assessments' | 'students'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'attempts' | 'events' | 'prompts' | 'assessments' | 'students'>('analytics');
   
   // Data states
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [students, setStudents] = useState<User[]>([]);
+  const [allEvents, setAllEvents] = useState<ProctoringEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Filter states
   const [statusFilter, setStatusFilter] = useState('');
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Events & Prompts Tab Filter states
+  const [eventFilterAssessment, setEventFilterAssessment] = useState('');
+  const [eventFilterType, setEventFilterType] = useState('');
+  const [eventFilterSeverity, setEventFilterSeverity] = useState('');
+  const [eventFilterSource, setEventFilterSource] = useState('');
+  const [eventFilterStatus, setEventFilterStatus] = useState('');
+  const [promptSearchQuery, setPromptSearchQuery] = useState('');
 
   // Modals
   const [selectedAttemptAudit, setSelectedAttemptAudit] = useState<{
@@ -50,16 +60,18 @@ export const AdminDashboard: React.FC = () => {
   const loadAllData = async () => {
     setIsLoading(true);
     try {
-      const [anData, attData, assData, stData] = await Promise.all([
+      const [anData, attData, assData, stData, evData] = await Promise.all([
         analyticsAPI.getAnalytics(),
         analyticsAPI.getAllAttempts(),
         assessmentsAPI.list(),
-        analyticsAPI.getStudents()
+        analyticsAPI.getStudents(),
+        analyticsAPI.getAllEvents()
       ]);
       setAnalytics(anData);
       setAttempts(attData.attempts);
       setAssessments(assData.assessments);
       setStudents(stData.students);
+      setAllEvents(evData.events || []);
     } catch (err) {
       console.error('Failed to load admin dashboard data:', err);
     } finally {
@@ -169,6 +181,40 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  // Filtered AI Prompts List (Preserves USP)
+  const aiPromptsList = allEvents.filter(ev => 
+    ev.eventType === 'ai_query_submitted' || 
+    ev.eventType === 'ai_response_received' ||
+    (ev.details && (
+      ev.details.toLowerCase().includes('prompt') || 
+      ev.details.toLowerCase().includes('chatgpt') || 
+      ev.details.toLowerCase().includes('claude') ||
+      ev.details.toLowerCase().includes('gemini') ||
+      ev.details.toLowerCase().includes('perplexity')
+    ))
+  );
+
+  const filteredAiPrompts = aiPromptsList.filter(ev => {
+    if (eventFilterAssessment && (ev as any).assessmentId !== eventFilterAssessment) return false;
+    if (promptSearchQuery) {
+      const q = promptSearchQuery.toLowerCase();
+      const matchText = (ev.details || '').toLowerCase();
+      const matchStudent = ((ev.studentName || '') + (ev.studentEmail || '')).toLowerCase();
+      return matchText.includes(q) || matchStudent.includes(q);
+    }
+    return true;
+  });
+
+  // Filtered Real-Time Proctoring & Security Events
+  const filteredEvents = allEvents.filter(ev => {
+    if (eventFilterAssessment && (ev as any).assessmentId !== eventFilterAssessment) return false;
+    if (eventFilterType && ev.eventType !== eventFilterType) return false;
+    if (eventFilterSeverity && ev.severity !== eventFilterSeverity) return false;
+    if (eventFilterSource && ev.detectionSource !== eventFilterSource) return false;
+    if (eventFilterStatus && ev.reviewStatus !== eventFilterStatus) return false;
+    return true;
+  });
+
   // Filtered attempts
   const filteredAttempts = attempts.filter(att => {
     const matchesStatus = !statusFilter || att.status === statusFilter;
@@ -233,7 +279,7 @@ export const AdminDashboard: React.FC = () => {
       <div className="flex border-b-2 border-black mb-8 overflow-x-auto bg-[#f0f0f0] pt-2 px-2 gap-2">
         <button
           onClick={() => setActiveTab('analytics')}
-          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 ${
+          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 shrink-0 ${
             activeTab === 'analytics'
               ? 'bg-black text-white border-b-0'
               : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
@@ -244,29 +290,51 @@ export const AdminDashboard: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('attempts')}
-          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 ${
+          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 shrink-0 ${
             activeTab === 'attempts'
               ? 'bg-black text-white border-b-0'
               : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
           }`}
         >
-          <ShieldAlert className="w-4 h-4" /> Proctoring Attempts & Audit ({attempts.length})
+          <ShieldAlert className="w-4 h-4" /> Proctoring Attempts ({attempts.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('events')}
+          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 shrink-0 ${
+            activeTab === 'events'
+              ? 'bg-black text-white border-b-0'
+              : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
+          }`}
+        >
+          <Activity className="w-4 h-4" /> Security & Audit Trail ({allEvents.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('prompts')}
+          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 shrink-0 ${
+            activeTab === 'prompts'
+              ? 'bg-black text-white border-b-0'
+              : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
+          }`}
+        >
+          <Bot className="w-4 h-4" /> AI Prompt History ({aiPromptsList.length})
         </button>
 
         <button
           onClick={() => setActiveTab('assessments')}
-          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 ${
+          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 shrink-0 ${
             activeTab === 'assessments'
               ? 'bg-black text-white border-b-0'
               : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
           }`}
         >
-          <BookOpen className="w-4 h-4" /> Security Settings & Questions ({assessments.length})
+          <BookOpen className="w-4 h-4" /> Security Settings & Tests ({assessments.length})
         </button>
 
         <button
           onClick={() => setActiveTab('students')}
-          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 ${
+          className={`py-2 px-4 text-xs font-bold uppercase tracking-[0.12em] border-2 border-black transition cursor-pointer flex items-center gap-2 shrink-0 ${
             activeTab === 'students'
               ? 'bg-black text-white border-b-0'
               : 'bg-white text-black hover:bg-[#f0f0f0] border-transparent'
@@ -478,6 +546,303 @@ export const AdminDashboard: React.FC = () => {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: LIVE SECURITY & PROCTORING AUDIT TRAIL */}
+      {activeTab === 'events' && (
+        <div className="space-y-6">
+          {/* Filters Bar */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-[#f0f0f0] p-4 border-2 border-black text-xs font-bold uppercase tracking-[0.10em]">
+            <div>
+              <label className="block text-[10px] text-neutral-600 mb-1">Assessment:</label>
+              <select
+                value={eventFilterAssessment}
+                onChange={(e) => setEventFilterAssessment(e.target.value)}
+                className="w-full bg-white border-2 border-black px-2 py-1.5 text-xs text-black focus:outline-none"
+              >
+                <option value="">All Assessments</option>
+                {assessments.map(a => (
+                  <option key={a.id} value={a.id}>{a.title}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] text-neutral-600 mb-1">Event Type:</label>
+              <select
+                value={eventFilterType}
+                onChange={(e) => setEventFilterType(e.target.value)}
+                className="w-full bg-white border-2 border-black px-2 py-1.5 text-xs text-black focus:outline-none"
+              >
+                <option value="">All Event Types</option>
+                <option value="incognito_browser_detected">Incognito Browser Detected</option>
+                <option value="external_browser_detected">External Browser Detected</option>
+                <option value="unauthorized_navigation">Unauthorized Navigation</option>
+                <option value="ai_query_submitted">AI Prompt Captured</option>
+                <option value="tab_switch">Tab Switch / Blur</option>
+                <option value="focus_loss">Focus Loss</option>
+                <option value="fullscreen_exit">Fullscreen Exit Attempt</option>
+                <option value="face_missing">Face Missing (CV)</option>
+                <option value="multiple_faces">Multiple Faces (CV)</option>
+                <option value="exam_exit_attempt">Exit / Close Attempt</option>
+                <option value="window_minimized">Window Minimized</option>
+                <option value="external_app_detected">External App Detected</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] text-neutral-600 mb-1">Severity:</label>
+              <select
+                value={eventFilterSeverity}
+                onChange={(e) => setEventFilterSeverity(e.target.value)}
+                className="w-full bg-white border-2 border-black px-2 py-1.5 text-xs text-black focus:outline-none"
+              >
+                <option value="">All Severities</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low (Permitted)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] text-neutral-600 mb-1">Detection Source:</label>
+              <select
+                value={eventFilterSource}
+                onChange={(e) => setEventFilterSource(e.target.value)}
+                className="w-full bg-white border-2 border-black px-2 py-1.5 text-xs text-black focus:outline-none"
+              >
+                <option value="">All Sources</option>
+                <option value="windows_monitor">Windows OS Monitor</option>
+                <option value="electron_browser">Lockdown Browser Shell</option>
+                <option value="browser_navigation">Navigation Policy</option>
+                <option value="browser_extension">Chrome Companion</option>
+                <option value="webcam_cv">Webcam CV Tracker</option>
+                <option value="electron_kiosk">Electron Kiosk Core</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] text-neutral-600 mb-1">Review Status:</label>
+              <select
+                value={eventFilterStatus}
+                onChange={(e) => setEventFilterStatus(e.target.value)}
+                className="w-full bg-white border-2 border-black px-2 py-1.5 text-xs text-black focus:outline-none"
+              >
+                <option value="">All Review Statuses</option>
+                <option value="pending">Pending Review</option>
+                <option value="violation_confirmed">Violation Confirmed</option>
+                <option value="dismissed">Dismissed (False Alarm)</option>
+                <option value="reviewed">Reviewed (Permitted)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Audit Events Table */}
+          <div className="border-2 border-black bg-white overflow-x-auto">
+            <table className="w-full text-left text-xs text-black">
+              <thead className="bg-black text-white uppercase text-[10px] tracking-[0.12em] border-b-2 border-black">
+                <tr>
+                  <th className="p-3.5">Timestamp</th>
+                  <th className="p-3.5">Candidate / Assessment</th>
+                  <th className="p-3.5">Event Type & Severity</th>
+                  <th className="p-3.5">Source</th>
+                  <th className="p-3.5">Audited Facts & Evidence</th>
+                  <th className="p-3.5">Status</th>
+                  <th className="p-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y-2 divide-black">
+                {filteredEvents.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-neutral-500 font-mono">
+                      No proctoring events match the configured filters.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredEvents.map((ev) => {
+                    const isCritical = ev.severity === 'critical';
+                    const isHigh = ev.severity === 'high';
+
+                    return (
+                      <tr key={ev.id} className="hover:bg-[#f0f0f0] transition">
+                        <td className="p-3.5 font-mono text-[11px] text-neutral-600 whitespace-nowrap">
+                          {new Date(ev.timestamp).toLocaleString()}
+                        </td>
+                        <td className="p-3.5">
+                          <div className="font-bold text-black uppercase tracking-tight">{ev.studentName || 'Candidate'}</div>
+                          <div className="text-[10px] text-neutral-600 font-mono">{ev.assessmentTitle || ev.studentEmail}</div>
+                        </td>
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] border ${
+                              isCritical ? 'bg-[#c90000] text-white border-[#c90000]' :
+                              isHigh ? 'bg-black text-white border-black' :
+                              ev.severity === 'medium' ? 'bg-[#f0f0f0] border-neutral-600 text-black' :
+                              'bg-white border-black text-black'
+                            }`}>
+                              {ev.eventType.replace(/_/g, ' ')}
+                            </span>
+                            <span className="text-[10px] font-mono text-neutral-500 uppercase">
+                              [{ev.severity}]
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-3.5">
+                          <span className="text-[10px] font-mono bg-[#f0f0f0] px-2 py-0.5 border border-black uppercase">
+                            {ev.detectionSource}
+                          </span>
+                        </td>
+                        <td className="p-3.5 max-w-md">
+                          <p className="text-xs font-mono text-neutral-900 break-words leading-relaxed">
+                            {ev.details}
+                          </p>
+                        </td>
+                        <td className="p-3.5">
+                          <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] border ${
+                            ev.reviewStatus === 'violation_confirmed' ? 'bg-[#c90000] text-white border-[#c90000]' :
+                            ev.reviewStatus === 'dismissed' ? 'bg-neutral-200 text-neutral-700 border-neutral-400' :
+                            ev.reviewStatus === 'reviewed' ? 'bg-black text-white border-black' :
+                            'bg-amber-100 text-amber-900 border-amber-400'
+                          }`}>
+                            {ev.reviewStatus.replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleReviewEvent(ev.id, 'violation_confirmed')}
+                              className="px-2 py-1 bg-[#c90000] hover:bg-red-800 text-white text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
+                              title="Confirm as verified violation"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => handleReviewEvent(ev.id, 'dismissed')}
+                              className="px-2 py-1 bg-white hover:bg-black hover:text-white text-black border border-black text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
+                              title="Dismiss as false positive"
+                            >
+                              Dismiss
+                            </button>
+                            <button
+                              onClick={() => handleReviewEvent(ev.id, 'reviewed')}
+                              className="px-2 py-1 bg-black hover:bg-neutral-800 text-white text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
+                              title="Mark as reviewed permitted activity"
+                            >
+                              Mark OK
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: AI PROMPT HISTORY & INTERACTION AUDIT (USP PRESERVE) */}
+      {activeTab === 'prompts' && (
+        <div className="space-y-6">
+          {/* Header & Explanation */}
+          <div className="bg-[#f0f0f0] p-4 border-2 border-black flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-extrabold text-sm uppercase tracking-tight text-black flex items-center gap-2">
+                <Bot className="w-4 h-4 text-black" />
+                <span>Captured AI Prompt Records & Interactions</span>
+              </h3>
+              <p className="text-xs text-neutral-600 font-mono mt-0.5">
+                Authentic prompt submissions extracted from supported AI tools (ChatGPT, Claude, Gemini) during active sessions
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                placeholder="Search prompt text or candidate..."
+                value={promptSearchQuery}
+                onChange={(e) => setPromptSearchQuery(e.target.value)}
+                className="bg-white border-2 border-black px-3 py-1.5 text-xs text-black placeholder-neutral-400 focus:outline-none w-64"
+              />
+            </div>
+          </div>
+
+          {/* Prompts Cards / Ruled Table */}
+          <div className="border-2 border-black bg-white overflow-hidden divide-y-2 divide-black">
+            {filteredAiPrompts.length === 0 ? (
+              <div className="text-center py-16 text-black">
+                <Bot className="w-10 h-10 mx-auto mb-3 text-neutral-400" />
+                <p className="text-sm font-bold uppercase tracking-[0.12em]">No AI prompts recorded</p>
+                <p className="text-xs text-neutral-600 font-mono mt-1">
+                  Prompts captured during AI-allowed assessments will populate here
+                </p>
+              </div>
+            ) : (
+              filteredAiPrompts.map((promptEv) => {
+                const isViolation = promptEv.severity === 'critical' || promptEv.severity === 'high';
+
+                return (
+                  <div key={promptEv.id} className="p-5 hover:bg-[#f0f0f0] transition">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-neutral-300 mb-3">
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-xs uppercase tracking-tight text-black">
+                          {promptEv.studentName || 'Candidate'}
+                        </span>
+                        <span className="text-neutral-400 font-mono text-xs">•</span>
+                        <span className="text-xs font-mono text-neutral-600">
+                          {promptEv.studentEmail}
+                        </span>
+                        <span className="text-neutral-400 font-mono text-xs">•</span>
+                        <span className="text-xs font-bold text-black uppercase">
+                          {promptEv.assessmentTitle}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] border ${
+                          isViolation ? 'bg-[#c90000] text-white border-[#c90000]' : 'bg-black text-white border-black'
+                        }`}>
+                          {isViolation ? 'Prohibited AI Usage' : 'AI Permitted (Monitored)'}
+                        </span>
+                        <span className="text-[11px] font-mono text-neutral-500">
+                          {new Date(promptEv.timestamp).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Captured Prompt Box */}
+                    <div className="bg-[#f0f0f0] border-2 border-black p-4 my-2">
+                      <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 mb-1 flex items-center justify-between">
+                        <span>Extracted AI Query:</span>
+                        <span className="text-black bg-white px-2 py-0.5 border border-black">
+                          Source: {promptEv.detectionSource}
+                        </span>
+                      </div>
+                      <blockquote className="text-xs font-mono font-bold text-black leading-relaxed whitespace-pre-wrap">
+                        {promptEv.details}
+                      </blockquote>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] font-mono text-neutral-600 pt-2">
+                      <span>Event ID: {promptEv.id}</span>
+                      <div className="flex items-center gap-2">
+                        <span>Review: {promptEv.reviewStatus}</span>
+                        <button
+                          onClick={() => handleReviewEvent(promptEv.id, 'reviewed')}
+                          className="px-2 py-0.5 bg-black text-white hover:bg-neutral-800 text-[10px] font-bold uppercase cursor-pointer"
+                        >
+                          Mark Evaluated
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}
@@ -1280,10 +1645,42 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 5. Violation Handling */}
+                {/* 5. Leaving the Examination Policy */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-black font-bold uppercase tracking-[0.12em]">5. Violation Handling Policy</label>
+                    <label className="text-black font-bold uppercase tracking-[0.12em]">5. Leaving the Examination Mode</label>
+                    <span className="text-[10px] text-neutral-600 font-mono">Focus loss & window boundary rules</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { key: 'monitor', label: 'Monitor Only', desc: 'Record departures' },
+                      { key: 'warn', label: 'Warn on Blur', desc: 'Display strike alerts' },
+                      { key: 'strict', label: 'Strict Lockdown', desc: 'Strict kiosk controls' }
+                    ].map(opt => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setPolicyForm({
+                          ...policyForm,
+                          policy: { ...policyForm.policy, leavingExamPolicy: opt.key }
+                        })}
+                        className={`py-2 px-2 font-bold uppercase tracking-[0.12em] border-2 border-black text-center transition cursor-pointer ${
+                          (policyForm.policy.leavingExamPolicy || 'warn') === opt.key
+                            ? 'bg-black text-white'
+                            : 'bg-white text-black hover:bg-[#f0f0f0]'
+                        }`}
+                      >
+                        <div className="text-xs">{opt.label}</div>
+                        <div className="text-[9px] opacity-70 mt-0.5">{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 6. Violation Handling */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-black font-bold uppercase tracking-[0.12em]">6. Violation Handling Policy</label>
                     <span className="text-[10px] text-neutral-600 font-mono">Infraction policy actions</span>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
@@ -1309,6 +1706,44 @@ export const AdminDashboard: React.FC = () => {
                         <div className="text-[9px] opacity-70 mt-0.5">{opt.desc}</div>
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* 7. Violation Thresholds */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-black font-bold uppercase tracking-[0.12em]">7. Violation Thresholds (Escalation Limits)</label>
+                    <span className="text-[10px] text-neutral-600 font-mono">Allowed count before termination</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 bg-[#f0f0f0] p-3 border-2 border-black">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase text-neutral-700 mb-1">Max Minor Violations (Advisories)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={policyForm.policy.maxMinorViolations || 3}
+                        onChange={(e) => setPolicyForm({
+                          ...policyForm,
+                          policy: { ...policyForm.policy, maxMinorViolations: parseInt(e.target.value, 10) }
+                        })}
+                        className="w-full bg-white border border-black px-2.5 py-1 text-xs text-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase text-neutral-700 mb-1">Max Total Violations (Termination)</label>
+                      <input
+                        type="number"
+                        min={2}
+                        max={20}
+                        value={policyForm.policy.maxTotalViolations || 6}
+                        onChange={(e) => setPolicyForm({
+                          ...policyForm,
+                          policy: { ...policyForm.policy, maxTotalViolations: parseInt(e.target.value, 10) }
+                        })}
+                        className="w-full bg-white border border-black px-2.5 py-1 text-xs text-black"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

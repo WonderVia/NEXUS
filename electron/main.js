@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu, session } = require('electron');
 const path = require('path');
 const { execFile } = require('child_process');
 const fs = require('fs');
@@ -16,6 +16,8 @@ let isExamMode = false;
 let blurStartTime = null;
 let foregroundMonitorInterval = null;
 let lastForegroundApp = '';
+let lastHeartbeatTime = Date.now();
+let lastProcessCheckOk = true;
 
 // Backend and environment configuration
 const BACKEND_URL = process.env.PROCTOR_API_URL || process.env.API_URL || 'http://localhost:5000';
@@ -26,13 +28,13 @@ const webMonitor = new WebMonitor({ backendUrl: BACKEND_URL });
 
 // Known suspicious application patterns for Windows foreground auditing
 const SUSPICIOUS_APP_PATTERNS = [
-  { pattern: /chrome|msedge|brave|firefox|opera/i, label: 'Web Browser' },
+  { pattern: /chrome|msedge|brave|firefox|opera|vivaldi|arc/i, label: 'External Browser' },
   { pattern: /chatgpt/i, label: 'ChatGPT Desktop App' },
   { pattern: /claude/i, label: 'Claude App' },
   { pattern: /slack|discord|teams|zoom|skype/i, label: 'Communication App' },
   { pattern: /notepad|wordpad|winword|excel|onenote/i, label: 'Notes / Document App' },
   { pattern: /whatsapp|telegram/i, label: 'Messaging App' },
-  { pattern: /cmd|powershell|wt|terminal/i, label: 'Command Terminal' }
+  { pattern: /cmd|powershell|wt|terminal|bash/i, label: 'Command Terminal' }
 ];
 
 // Resolve PowerShell script path (handles unpacked asar in production packages)
@@ -56,8 +58,12 @@ function getForegroundApp() {
     execFile('powershell.exe', [
       '-NonInteractive', '-NoProfile', '-ExecutionPolicy', 'Bypass',
       '-File', scriptPath
-    ], { timeout: 2000 }, (err, stdout) => {
-      if (err || !stdout) return resolve(null);
+    ], { timeout: 2500 }, (err, stdout) => {
+      if (err || !stdout) {
+        lastProcessCheckOk = false;
+        return resolve(null);
+      }
+      lastProcessCheckOk = true;
       try {
         const data = JSON.parse(stdout.trim());
         resolve(data);
@@ -87,7 +93,7 @@ function startForegroundMonitoring() {
     const appInfo = await getForegroundApp();
     if (!appInfo) return;
 
-    const appKey = `${appInfo.ProcessName}:${appInfo.ProcessId}`;
+    const appKey = `${appInfo.ProcessName}:${appInfo.ProcessId}:${appInfo.WindowTitle}`;
     if (appKey === lastForegroundApp) return;
 
     lastForegroundApp = appKey;
@@ -98,31 +104,76 @@ function startForegroundMonitoring() {
       return;
     }
 
-    const category = classifyApp(appInfo.ProcessName, appInfo.WindowTitle || '');
-    
-    if (category && !mainWindow.isFocused()) {
-      console.log(`[Proctor External App] Detected: ${appInfo.ProcessName} (${category}) - "${appInfo.WindowTitle}"`);
-      
-      const eventPayload = {
-        processName: appInfo.ProcessName,
-        windowTitle: (appInfo.WindowTitle || '').substring(0, 140),
-        category,
-        timestamp: Date.now()
-      };
+    // Only audit when main examination browser window is not focused
+    if (!mainWindow.isFocused()) {
+      const now = Date.now();
+      const windowTitle = (appInfo.WindowTitle || '').substring(0, 160);
 
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('proctor:external-app-detected', eventPayload);
+      if (appInfo.IsBrowser) {
+        if (appInfo.IsIncognito) {
+          console.warn(`[Proctor Incognito Alert] ${appInfo.ProcessName} in Incognito/InPrivate focused: "${windowTitle}"`);
+          const eventPayload = {
+            processName: appInfo.ProcessName,
+            windowTitle,
+            isIncognito: true,
+            evidence: appInfo.IncognitoEvidence || 'Private browsing signature detected',
+            timestamp: now
+          };
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('proctor:incognito-detected', eventPayload);
+          }
+
+          webMonitor.reportViolation({
+            eventType: 'incognito_browser_detected',
+            severity: 'critical',
+            details: `External browser in Incognito/InPrivate mode detected: ${appInfo.ProcessName} ("${windowTitle}"). ${eventPayload.evidence}`,
+            url: `browser://${appInfo.ProcessName}/incognito`
+          });
+        } else {
+          console.warn(`[Proctor External Browser Alert] ${appInfo.ProcessName} focused: "${windowTitle}"`);
+          const eventPayload = {
+            processName: appInfo.ProcessName,
+            windowTitle,
+            isIncognito: false,
+            timestamp: now
+          };
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('proctor:external-browser-detected', eventPayload);
+          }
+
+          webMonitor.reportViolation({
+            eventType: 'external_browser_detected',
+            severity: 'high',
+            details: `External browser window focused: ${appInfo.ProcessName} ("${windowTitle}")`,
+            url: `browser://${appInfo.ProcessName}`
+          });
+        }
+      } else {
+        const category = appInfo.Category || classifyApp(appInfo.ProcessName, windowTitle) || 'External Application';
+        console.log(`[Proctor External App] Detected: ${appInfo.ProcessName} (${category}) - "${windowTitle}"`);
+        
+        const eventPayload = {
+          processName: appInfo.ProcessName,
+          windowTitle,
+          category,
+          timestamp: now
+        };
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('proctor:external-app-detected', eventPayload);
+        }
+
+        webMonitor.reportViolation({
+          eventType: 'external_app_detected',
+          severity: 'high',
+          details: `External ${category} focused: "${appInfo.ProcessName}" (${windowTitle})`,
+          url: `app://${appInfo.ProcessName}`
+        });
       }
-
-      // Automatically report to backend proctoring pipeline
-      webMonitor.reportViolation({
-        eventType: 'external_app_detected',
-        severity: 'high',
-        details: `External ${category} focused: "${appInfo.ProcessName}" (${eventPayload.windowTitle})`,
-        url: `app://${appInfo.ProcessName}`
-      });
     }
-  }, 2000);
+  }, 1800);
 }
 
 function stopForegroundMonitoring() {
@@ -195,6 +246,7 @@ function createWindow() {
         mainWindow.webContents.send('security:navigation-blocked', {
           url,
           reason: evaluation.reason,
+          isAi: evaluation.isAi,
           message: evaluation.message || 'Popups and external windows are blocked by exam policy.',
           timestamp: Date.now()
         });
@@ -202,9 +254,9 @@ function createWindow() {
 
       if (isExamMode) {
         webMonitor.reportViolation({
-          eventType: 'external_site_visit',
+          eventType: evaluation.isAi ? 'ai_query_submitted' : 'unauthorized_navigation',
           severity: 'high',
-          details: `Blocked attempt to open external window: ${url}`,
+          details: `Blocked attempt to open external window: ${url}. (${evaluation.message})`,
           url
         });
       }
@@ -212,7 +264,7 @@ function createWindow() {
       return { action: 'deny' };
     }
 
-    return { action: 'deny' }; // Even if allowed origin, keep everything inside main window
+    return { action: 'deny' }; // Keep everything inside main window
   });
 
   // CONTROLLED NAVIGATION: Enforce exam navigation allowlist
@@ -227,6 +279,7 @@ function createWindow() {
         mainWindow.webContents.send('security:navigation-blocked', {
           url: navigationUrl,
           reason: evaluation.reason,
+          isAi: evaluation.isAi,
           message: evaluation.message || 'External navigation is restricted by institutional policy.',
           timestamp: Date.now()
         });
@@ -234,9 +287,9 @@ function createWindow() {
 
       if (isExamMode) {
         webMonitor.reportViolation({
-          eventType: 'external_site_visit',
+          eventType: 'unauthorized_navigation',
           severity: 'high',
-          details: `Candidate attempted navigation to unapproved external URL: ${navigationUrl}`,
+          details: `Candidate attempted navigation to unapproved URL: ${navigationUrl}. (${evaluation.message})`,
           url: navigationUrl
         });
       }
@@ -252,6 +305,11 @@ function createWindow() {
     }
     if (isExamMode) {
       startForegroundMonitoring();
+      webMonitor.reportViolation({
+        eventType: 'focus_loss',
+        severity: 'medium',
+        details: 'Examination window lost focus (candidate navigated away or switched windows).'
+      });
     }
   });
 
@@ -261,6 +319,13 @@ function createWindow() {
     console.log(`[Proctor] Window regained focus. Away duration: ${duration}ms`);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('window:focus', { timestamp: focusTime, duration });
+    }
+    if (isExamMode && duration > 2000) {
+      webMonitor.reportViolation({
+        eventType: 'assessment_return',
+        severity: 'low',
+        details: `Candidate returned to examination window after ${(duration / 1000).toFixed(1)}s away.`
+      });
     }
     blurStartTime = null;
     lastForegroundApp = '';
@@ -273,6 +338,41 @@ function createWindow() {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('security:fullscreen-exit-attempt', { timestamp: Date.now() });
       }
+      webMonitor.reportViolation({
+        eventType: 'fullscreen_exit',
+        severity: 'high',
+        details: 'Candidate exited fullscreen mode during active assessment session.'
+      });
+    }
+  });
+
+  // Lockdown Close & Minimize Interceptions
+  mainWindow.on('close', (event) => {
+    if (isExamMode) {
+      event.preventDefault();
+      console.warn('[Security] Candidate attempted to close exam window while exam mode is active!');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('security:close-attempt', { timestamp: Date.now() });
+      }
+      webMonitor.reportViolation({
+        eventType: 'exam_exit_attempt',
+        severity: 'critical',
+        details: 'Candidate attempted to close or terminate the examination window while lockdown mode was active.'
+      });
+    }
+  });
+
+  mainWindow.on('minimize', () => {
+    if (isExamMode) {
+      console.warn('[Security] Exam window was minimized!');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('security:minimize-attempt', { timestamp: Date.now() });
+      }
+      webMonitor.reportViolation({
+        eventType: 'window_minimized',
+        severity: 'high',
+        details: 'Examination browser was minimized during active examination session.'
+      });
     }
   });
 
@@ -287,10 +387,10 @@ function createWindow() {
       return;
     }
 
-    // Block Ctrl+Shift+I / Cmd+Option+I (Inspect Element)
-    if ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i') {
+    // Block Ctrl+Shift+I / Cmd+Option+I / Ctrl+Shift+J / Ctrl+Shift+C (Inspect Element)
+    if ((input.control || input.meta) && input.shift && ['i', 'j', 'c'].includes(input.key.toLowerCase())) {
       event.preventDefault();
-      mainWindow.webContents.send('security:blocked-shortcut', { key: 'Ctrl+Shift+I' });
+      mainWindow.webContents.send('security:blocked-shortcut', { key: `Ctrl+Shift+${input.key.toUpperCase()}` });
       return;
     }
 
@@ -301,17 +401,24 @@ function createWindow() {
       return;
     }
 
-    // Block Ctrl+W (Close Window)
-    if ((input.control || input.meta) && input.key.toLowerCase() === 'w') {
+    // Block Ctrl+W (Close Window), Ctrl+Q (Quit)
+    if ((input.control || input.meta) && ['w', 'q'].includes(input.key.toLowerCase())) {
       event.preventDefault();
-      mainWindow.webContents.send('security:blocked-shortcut', { key: 'Ctrl+W' });
+      mainWindow.webContents.send('security:blocked-shortcut', { key: `Ctrl+${input.key.toUpperCase()}` });
       return;
     }
 
-    // Block Ctrl+P (Print)
-    if ((input.control || input.meta) && input.key.toLowerCase() === 'p') {
+    // Block Ctrl+P (Print), Ctrl+S (Save Page)
+    if ((input.control || input.meta) && ['p', 's'].includes(input.key.toLowerCase())) {
       event.preventDefault();
-      mainWindow.webContents.send('security:blocked-shortcut', { key: 'Ctrl+P' });
+      mainWindow.webContents.send('security:blocked-shortcut', { key: `Ctrl+${input.key.toUpperCase()}` });
+      return;
+    }
+
+    // Block Ctrl+N (New Window), Ctrl+T (New Tab outside UI)
+    if ((input.control || input.meta) && ['n', 't'].includes(input.key.toLowerCase())) {
+      event.preventDefault();
+      mainWindow.webContents.send('security:blocked-shortcut', { key: `Ctrl+${input.key.toUpperCase()}` });
       return;
     }
 
@@ -404,7 +511,9 @@ ipcMain.handle('security:set-exam-mode', (event, active) => {
   navigationPolicy.setExamActive(isExamMode);
   console.log(`[Security Mode] Exam mode set to: ${isExamMode}`);
 
-  if (!isExamMode) {
+  if (isExamMode) {
+    startForegroundMonitoring();
+  } else {
     stopForegroundMonitoring();
     webMonitor.clearSession();
   }
@@ -425,6 +534,26 @@ ipcMain.handle('proctor:set-session-info', (event, sessionInfo) => {
     webMonitor.clearSession();
   }
   return true;
+});
+
+ipcMain.handle('browser:evaluate-url', (event, url) => {
+  if (!validateSender(event)) return { allowed: false, reason: 'unauthorized_sender' };
+  return navigationPolicy.evaluateNavigation(url);
+});
+
+ipcMain.handle('system:heartbeat', async (event, clientState) => {
+  if (!validateSender(event)) return { ok: false };
+  lastHeartbeatTime = Date.now();
+  const backendHealth = await checkBackendHealth();
+
+  return {
+    ok: true,
+    backendHealthy: backendHealth.healthy,
+    foregroundMonitorActive: Boolean(foregroundMonitorInterval),
+    processCheckOk: lastProcessCheckOk,
+    isExamMode,
+    timestamp: lastHeartbeatTime
+  };
 });
 
 ipcMain.handle('system:get-info', (event) => {
@@ -487,7 +616,19 @@ if (!gotTheLock) {
   });
 
   // App Lifecycle
-  app.whenReady().then(createWindow);
+  app.whenReady().then(() => {
+    // Strip frame-blocking headers for permitted resources inside lockdown browser
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      const responseHeaders = Object.assign({}, details.responseHeaders);
+      delete responseHeaders['x-frame-options'];
+      delete responseHeaders['X-Frame-Options'];
+      delete responseHeaders['content-security-policy'];
+      delete responseHeaders['Content-Security-Policy'];
+      callback({ responseHeaders });
+    });
+
+    createWindow();
+  });
 }
 
 app.on('window-all-closed', () => {

@@ -183,3 +183,55 @@ export function exportDataCsv(req: AuthenticatedRequest, res: Response) {
     return res.status(500).json({ error: 'Failed to export CSV' });
   }
 }
+
+export function getAllProctoringEvents(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { assessmentId, eventType, severity, source, reviewStatus, isAi } = req.query;
+
+    let query = `
+      SELECT pe.*, 
+             u.name as studentName, 
+             u.email as studentEmail, 
+             a.title as assessmentTitle,
+             a.id as assessmentId
+      FROM proctoring_events pe
+      JOIN attempts att ON att.id = pe.attemptId
+      JOIN users u ON u.id = att.studentId
+      JOIN assessments a ON a.id = att.assessmentId
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    if (assessmentId) {
+      query += ' AND a.id = ?';
+      params.push(assessmentId);
+    }
+    if (eventType) {
+      query += ' AND pe.eventType = ?';
+      params.push(eventType);
+    }
+    if (severity) {
+      query += ' AND pe.severity = ?';
+      params.push(severity);
+    }
+    if (source) {
+      query += ' AND pe.detectionSource = ?';
+      params.push(source);
+    }
+    if (reviewStatus) {
+      query += ' AND pe.reviewStatus = ?';
+      params.push(reviewStatus);
+    }
+    if (isAi === 'true') {
+      query += " AND (pe.eventType IN ('ai_query_submitted', 'ai_response_received') OR pe.details LIKE '%AI prompt%' OR pe.details LIKE '%ChatGPT%' OR pe.details LIKE '%Claude%' OR pe.details LIKE '%Gemini%')";
+    }
+
+    query += ' ORDER BY pe.timestamp DESC LIMIT 300';
+
+    const events = db.prepare(query).all(...params);
+    return res.json({ events });
+  } catch (err: any) {
+    console.error('Get all events error:', err);
+    return res.status(500).json({ error: 'Failed to retrieve proctoring events' });
+  }
+}
