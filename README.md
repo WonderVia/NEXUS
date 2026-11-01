@@ -1,4 +1,4 @@
-# WUElev8 Smart Proctoring Browser
+# Nexus Smart Proctoring Browser
 **Enterprise Anti-Cheat Desktop Assessment Environment | National Hackathon MVP**  
 *WUElev8 Innovation Services Pvt. Ltd.*
 
